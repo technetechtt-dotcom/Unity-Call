@@ -1,0 +1,49 @@
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --font-size-base: 16px;
+  --font-size-lg: 18px;
+  --font-size-xl: 20px;
+}
+
+body {
+  font-family: 'Inter', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background-color: #f3f4f6; /* Outer background */
+}
+
+/* Accessibility Utilities */
+.high-contrast {
+  --tw-ring-offset-width: 4px !important;
+  --tw-ring-width: 4px !important;
+}
+
+.high-contrast * {
+  border-width: 1px; 
+}
+
+.high-contrast .btn-primary {
+  background-color: #004D40 !important;
+  color: #FFFFFF !important;
+  border: 2px solid #FFFFFF !important;
+}
+
+/* Dynamic Font Sizing */
+.text-size-normal { font-size: var(--font-size-base); }
+.text-size-large { font-size: var(--font-size-lg); }
+.text-size-xlarge { font-size: var(--font-size-xl); }
+
+/* Scrollbar hiding for clean UI */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}

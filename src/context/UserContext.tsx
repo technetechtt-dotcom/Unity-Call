@@ -1,55 +1,25 @@
-import React, { createContext, useContext } from 'react';
-import { useLocalStorage } from '../hooks/useLocalStorage';
-interface UserProfile {
-  name: string;
-  phoneNumber: string;
-  email: string;
-  accessibilityType: 'none' | 'blind' | 'deaf' | 'hoh';
-  isLoggedIn: boolean;
-}
-interface UserContextType {
-  user: UserProfile;
-  updateUser: (updates: Partial<UserProfile>) => void;
-  logout: () => void;
-}
-const defaultUser: UserProfile = {
-  name: '',
-  phoneNumber: '',
-  email: '',
-  accessibilityType: 'none',
-  isLoggedIn: false
-};
-const UserContext = createContext<UserContextType | undefined>(undefined);
-export function UserProvider({ children }: {children: ReactNode;}) {
-  const [user, setUser] = useLocalStorage<UserProfile>(
-    'unitycall_user',
-    defaultUser
-  );
-  const updateUser = (updates: Partial<UserProfile>) => {
-    setUser((prev) => ({
-      ...prev,
-      ...updates
-    }));
-  };
-  const logout = () => {
-    setUser(defaultUser);
-  };
-  return (
-    <UserContext.Provider
-      value={{
-        user,
-        updateUser,
-        logout
-      }}>
-      
-      {children}
-    </UserContext.Provider>);
+import type { ReactNode } from 'react';
+import { useAuth } from './AuthContext';
 
+export function UserProvider({ children }: { children: ReactNode }) {
+  return <>{children}</>;
 }
+
 export function useUser() {
-  const context = useContext(UserContext);
-  if (context === undefined) {
-    throw new Error('useUser must be used within a UserProvider');
-  }
-  return context;
+  const { user, updateProfile, logout } = useAuth();
+  return {
+    user: {
+      name: user?.name || '',
+      phoneNumber: user?.phone || '',
+      email: user?.email || '',
+      accessibilityType: 'none' as const,
+      isLoggedIn: Boolean(user)
+    },
+    updateUser: (updates: { name?: string }) => {
+      if (updates.name) void updateProfile({ name: updates.name });
+    },
+    logout: () => {
+      void logout();
+    }
+  };
 }

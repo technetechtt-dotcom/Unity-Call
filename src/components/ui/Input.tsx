@@ -5,11 +5,13 @@ interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
   label: string;
   error?: string;
   helperText?: string;
+  icon?: React.ReactNode;
 }
 export function Input({
   label,
   error,
   helperText,
+  icon,
   id,
   type = 'text',
   className = '',
@@ -33,11 +35,17 @@ export function Input({
       </label>
 
       <div className="relative">
+        {icon && (
+          <span className="absolute left-4 top-1/2 -translate-y-1/2 opacity-60" aria-hidden="true">
+            {icon}
+          </span>
+        )}
         <input
           id={inputId}
           type={inputType}
           className={`
             w-full px-4 py-3 rounded-xl border-2 transition-colors
+            ${icon ? 'pl-12' : ''}
             focus:outline-none focus:ring-4 focus:ring-offset-1
             disabled:bg-gray-100 disabled:text-gray-500
             ${error ? 'border-danger focus:ring-danger/30' : highContrast ? 'bg-gray-900 border-white text-white focus:border-yellow-400 focus:ring-yellow-400' : 'bg-white border-gray-300 text-gray-900 focus:border-primary focus:ring-primary/30'}

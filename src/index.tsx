@@ -1,7 +1,22 @@
+import { StrictMode } from 'react';
+import { createRoot } from 'react-dom/client';
+import { App } from './App';
 import './index.css';
-import "./index.css";
-import React from "react";
-import { render } from "react-dom";
-import { App } from "./App";
 
-render(<App />, document.getElementById("root"));
+const root = document.getElementById('root');
+if (!root) {
+  throw new Error('Unity Call could not find the root element.');
+}
+
+createRoot(root).render(
+  <StrictMode>
+    <div id="unity-live-region" className="sr-only" aria-live="polite" aria-atomic="true" />
+    <App />
+  </StrictMode>
+);
+
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    void navigator.serviceWorker.register('/sw.js');
+  });
+}

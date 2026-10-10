@@ -8,11 +8,7 @@ export function useCamera() {
   const streamRef = useRef<MediaStream | null>(null);
 
   useEffect(() => {
-    if (
-    typeof navigator !== 'undefined' &&
-    navigator.mediaDevices &&
-    navigator.mediaDevices.getUserMedia)
-    {
+    if (typeof navigator !== 'undefined' && typeof navigator.mediaDevices?.getUserMedia === 'function') {
       setSupported(true);
     }
   }, []);

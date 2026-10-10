@@ -1,7 +1,13 @@
-import React, { useEffect, useState, createContext, useContext } from 'react';
+import {
+  createContext,
+  useContext,
+  useEffect,
+  type ReactNode
+} from 'react';
 import { useLocalStorage } from '../hooks/useLocalStorage';
-type FontSize = 'normal' | 'large' | 'xlarge';
-type Language = 'English' | 'isiZulu' | 'Afrikaans' | 'isiXhosa';
+import i18n from '../i18n/config';
+import type { AppLanguage, FontSize } from '../lib/types';
+
 interface AccessibilityContextType {
   highContrast: boolean;
   setHighContrast: (enabled: boolean) => void;
@@ -13,8 +19,8 @@ interface AccessibilityContextType {
   setScreenReaderMode: (enabled: boolean) => void;
   ttsEnabled: boolean;
   setTtsEnabled: (enabled: boolean) => void;
-  language: Language;
-  setLanguage: (lang: Language) => void;
+  language: AppLanguage;
+  setLanguage: (lang: AppLanguage) => void;
   vibrationEnabled: boolean;
   setVibrationEnabled: (enabled: boolean) => void;
   captionOverlayOpacity: number;
@@ -28,54 +34,47 @@ interface AccessibilityContextType {
   signAvatarEnabled: boolean;
   setSignAvatarEnabled: (enabled: boolean) => void;
 }
-const AccessibilityContext = createContext<
-  AccessibilityContextType | undefined>(
-  undefined);
-export function AccessibilityProvider({ children }: {children: ReactNode;}) {
-  const [highContrast, setHighContrast] = useLocalStorage(
-    'acc_highContrast',
-    false
-  );
+
+const AccessibilityContext = createContext<AccessibilityContextType | undefined>(undefined);
+
+const languageCode: Record<AppLanguage, string> = {
+  English: 'en',
+  isiZulu: 'zu',
+  Afrikaans: 'af',
+  isiXhosa: 'xh'
+};
+
+export function AccessibilityProvider({ children }: { children: ReactNode }) {
+  const [highContrast, setHighContrast] = useLocalStorage('acc_highContrast', false);
   const [darkMode, setDarkMode] = useLocalStorage('acc_darkMode', false);
-  const [fontSize, setFontSize] = useLocalStorage<FontSize>(
-    'acc_fontSize',
-    'normal'
-  );
-  const [screenReaderMode, setScreenReaderMode] = useLocalStorage(
-    'acc_screenReader',
-    false
-  );
+  const [fontSize, setFontSize] = useLocalStorage<FontSize>('acc_fontSize', 'normal');
+  const [screenReaderMode, setScreenReaderMode] = useLocalStorage('acc_screenReader', false);
   const [ttsEnabled, setTtsEnabled] = useLocalStorage('acc_tts', false);
-  const [language, setLanguage] = useLocalStorage<Language>(
-    'acc_language',
-    'English'
-  );
-  const [vibrationEnabled, setVibrationEnabled] = useLocalStorage(
-    'acc_vibration',
-    true
-  );
-  const [captionOverlayOpacity, setCaptionOverlayOpacity] = useLocalStorage(
-    'acc_captionOpacity',
-    0.8
-  );
+  const [language, setLanguage] = useLocalStorage<AppLanguage>('acc_language', 'English');
+  const [vibrationEnabled, setVibrationEnabled] = useLocalStorage('acc_vibration', true);
+  const [captionOverlayOpacity, setCaptionOverlayOpacity] = useLocalStorage('acc_captionOpacity', 0.8);
   const [ecoMode, setEcoMode] = useLocalStorage('acc_ecoMode', false);
-  const [voiceSpeed, setVoiceSpeed] = useLocalStorage('acc_voiceSpeed', 1.0);
-  const [signLanguageEnabled, setSignLanguageEnabled] = useLocalStorage(
-    'acc_signLanguage',
-    false
-  );
-  const [signAvatarEnabled, setSignAvatarEnabled] = useLocalStorage(
-    'acc_signAvatar',
-    false
-  );
-  // Apply dark mode class to body/root
+  const [voiceSpeed, setVoiceSpeed] = useLocalStorage('acc_voiceSpeed', 1);
+  const [signLanguageEnabled, setSignLanguageEnabled] = useLocalStorage('acc_signLanguage', false);
+  const [signAvatarEnabled, setSignAvatarEnabled] = useLocalStorage('acc_signAvatar', false);
+
   useEffect(() => {
-    if (darkMode) {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
-  }, [darkMode]);
+    const root = document.documentElement;
+    root.classList.toggle('dark', darkMode);
+    root.classList.toggle('high-contrast', highContrast);
+    root.classList.toggle('eco-mode', ecoMode);
+    root.classList.toggle('sr-optimize', screenReaderMode);
+    root.dataset.fontSize = fontSize;
+    root.style.setProperty(
+      '--unity-font-size',
+      fontSize === 'xlarge' ? '22px' : fontSize === 'large' ? '18px' : '16px'
+    );
+  }, [darkMode, highContrast, ecoMode, screenReaderMode, fontSize]);
+
+  useEffect(() => {
+    void i18n.changeLanguage(languageCode[language] || 'en');
+  }, [language]);
+
   return (
     <AccessibilityContext.Provider
       value={{
@@ -103,27 +102,21 @@ export function AccessibilityProvider({ children }: {children: ReactNode;}) {
         setSignLanguageEnabled,
         signAvatarEnabled,
         setSignAvatarEnabled
-      }}>
-      
+      }}
+    >
       <div
-        className={`
-          ${highContrast ? 'high-contrast' : ''} 
-          ${darkMode ? 'dark-mode' : ''}
-          text-size-${fontSize}
-          h-full w-full
-        `}>
-        
+        className={`unity-shell text-size-${fontSize} ${highContrast ? 'high-contrast' : ''} ${darkMode ? 'dark-mode' : ''}`}
+      >
         {children}
       </div>
-    </AccessibilityContext.Provider>);
-
+    </AccessibilityContext.Provider>
+  );
 }
+
 export function useAccessibility() {
   const context = useContext(AccessibilityContext);
-  if (context === undefined) {
-    throw new Error(
-      'useAccessibility must be used within an AccessibilityProvider'
-    );
+  if (!context) {
+    throw new Error('useAccessibility must be used within an AccessibilityProvider');
   }
   return context;
 }

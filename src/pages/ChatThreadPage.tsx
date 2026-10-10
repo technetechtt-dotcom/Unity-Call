@@ -1,341 +1,321 @@
-import React, { useEffect, useState, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate, useParams } from '../lib/router';
+import { ArrowLeft, Mic, Paperclip, Phone, Search, Send, StopCircle, Video } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { useAccessibility } from '../context/AccessibilityContext';
-import { useUser } from '../context/UserContext';
-import {
-  ArrowLeft,
-  Phone,
-  Type,
-  Mic,
-  Send,
-  StopCircle,
-  Play,
-  Pause } from
-'lucide-react';
-import { ChatBubble } from '../components/ChatBubble';
-import { useLocalStorage } from '../hooks/useLocalStorage';
+import { useAuth } from '../context/AuthContext';
 import { useTTS } from '../hooks/useTTS';
 import { useVoiceRecorder } from '../hooks/useVoiceRecorder';
-import { useTranslation } from 'react-i18next';
+import { ChatBubble } from '../components/ChatBubble';
 import { QuickReplies } from '../components/QuickReplies';
-interface Message {
-  id: string;
-  text: string;
-  isSent: boolean;
-  time: string;
-  type: 'text' | 'voice';
-  duration?: string;
-  audioUrl?: string;
-}
-const MOCK_MESSAGES: Message[] = [
-{
-  id: '1',
-  text: 'Hi! Are we still meeting today?',
-  isSent: false,
-  time: '2:30 PM',
-  type: 'text'
-},
-{
-  id: '2',
-  text: 'Yes! Conference room B at 3pm',
-  isSent: true,
-  time: '2:32 PM',
-  type: 'text'
-},
-{
-  id: '3',
-  text: 'Perfect. I will have captions enabled',
-  isSent: false,
-  time: '2:33 PM',
-  type: 'text'
-},
-{
-  id: '4',
-  text: 'Voice message',
-  isSent: true,
-  time: '2:35 PM',
-  type: 'voice',
-  duration: '0:08'
-},
-{
-  id: '5',
-  text: 'See you at 3pm! 👋',
-  isSent: false,
-  time: '2:40 PM',
-  type: 'text'
-}];
+import { api, uploadMedia } from '../lib/api';
+import { realtime } from '../lib/socket';
+import { enqueueMessage, peekQueue, removeQueued } from '../lib/offlineQueue';
+import type { ChatMessage, ConversationSummary } from '../lib/types';
 
-interface ChatThreadPageProps {
-  onBack: () => void;
-  onCall: () => void;
-  contactName?: string;
-}
-export function ChatThreadPage({
-  onBack,
-  onCall,
-  contactName = 'Thandi Nkosi'
-}: ChatThreadPageProps) {
-  const { highContrast, fontSize, setFontSize, ttsEnabled } = useAccessibility();
-  const { user } = useUser();
+export function ChatThreadPage() {
+  const { id } = useParams();
+  const navigate = useNavigate();
+  const { user } = useAuth();
+  const { highContrast, ttsEnabled } = useAccessibility();
   const { t } = useTranslation();
-  const [messages, setMessages] = useLocalStorage<Message[]>(
-    `chat_${contactName}`,
-    MOCK_MESSAGES
-  );
-  const [inputText, setInputText] = useState('');
-  const [isTyping, setIsTyping] = useState(false);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
   const { speak } = useTTS();
-  const {
-    isRecording,
-    duration,
-    startRecording,
-    stopRecording,
-    audioUrl,
-    resetRecording
-  } = useVoiceRecorder();
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({
-      behavior: 'smooth'
-    });
+  const recorder = useVoiceRecorder();
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [conversation, setConversation] = useState<ConversationSummary>();
+  const [inputText, setInputText] = useState('');
+  const [search, setSearch] = useState('');
+  const [typing, setTyping] = useState(false);
+  const endRef = useRef<HTMLDivElement>(null);
+
+  const load = async () => {
+    if (!id) return;
+    const [inbox, list] = await Promise.all([
+      api<{ messages: ChatMessage[] }>(`/api/conversations/${id}/messages${search ? `?q=${encodeURIComponent(search)}` : ''}`),
+      api<{ conversations: ConversationSummary[] }>('/api/conversations')
+    ]);
+    setMessages(inbox.messages);
+    setConversation(list.conversations.find((item) => item.id === id));
+    await api(`/api/conversations/${id}/read`, { method: 'POST' });
   };
+
   useEffect(() => {
-    scrollToBottom();
-  }, [messages, isTyping]);
-  // Auto-read new incoming messages
+    void load();
+    // Reload when the conversation or search changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id, search]);
+
   useEffect(() => {
-    if (ttsEnabled && messages.length > 0) {
-      const lastMsg = messages[messages.length - 1];
-      if (!lastMsg.isSent && lastMsg.type === 'text') {
-        speak(lastMsg.text);
+    const unsubscribe = realtime.subscribe((payload) => {
+      if (payload.type === 'message' && payload.conversationId === id) {
+        setMessages((prev) => {
+          const next = payload.message as ChatMessage;
+          if (prev.some((item) => item.id === next.id || item.clientId === next.clientId)) {
+            return prev.map((item) => (item.clientId === next.clientId ? next : item));
+          }
+          return [...prev, next];
+        });
+      }
+      if (payload.type === 'typing' && payload.conversationId === id) {
+        setTyping(true);
+        window.setTimeout(() => setTyping(false), 2000);
+      }
+      if (payload.type === 'message:status' && payload.messageId) {
+        setMessages((prev) =>
+          prev.map((item) =>
+            item.id === payload.messageId ? { ...item, status: payload.status as ChatMessage['status'] } : item
+          )
+        );
+      }
+    });
+    return () => {
+      unsubscribe();
+    };
+  }, [id]);
+
+  useEffect(() => {
+    endRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages, typing]);
+
+  useEffect(() => {
+    if (!ttsEnabled || messages.length === 0) return;
+    const last = messages[messages.length - 1];
+    if (last.senderId !== user?.id && last.body) speak(last.body);
+  }, [messages, speak, ttsEnabled, user?.id]);
+
+  useEffect(() => {
+    if (!recorder.audioBlob || recorder.isRecording || !id) return;
+    const upload = async () => {
+      const uploaded = await uploadMedia(recorder.audioBlob as Blob, { kind: 'audio', filename: 'voice.webm' });
+      const sent = await api<{ message: ChatMessage }>(`/api/conversations/${id}/messages`, {
+        method: 'POST',
+        body: JSON.stringify({
+          type: 'voice',
+          mediaId: uploaded.media.id,
+          body: 'Voice message'
+        })
+      });
+      setMessages((prev) => [...prev, sent.message]);
+      recorder.resetRecording();
+    };
+    void upload();
+  }, [id, recorder.audioBlob, recorder.isRecording]);
+
+  const flushQueue = async () => {
+    if (!id || !navigator.onLine) return;
+    for (const item of peekQueue().filter((entry) => entry.conversationId === id)) {
+      try {
+        const sent = await api<{ message: ChatMessage }>(`/api/conversations/${id}/messages`, {
+          method: 'POST',
+          body: JSON.stringify(item)
+        });
+        removeQueued(item.clientId);
+        setMessages((prev) => prev.map((msg) => (msg.clientId === item.clientId ? sent.message : msg)));
+      } catch {
+        setMessages((prev) =>
+          prev.map((msg) => (msg.clientId === item.clientId ? { ...msg, status: 'failed' } : msg))
+        );
       }
     }
-  }, [messages, ttsEnabled, speak]);
-  // Handle voice recording completion
-  useEffect(() => {
-    if (audioUrl && !isRecording) {
-      const newMessage: Message = {
-        id: Date.now().toString(),
-        text: 'Voice message',
-        isSent: true,
-        time: new Date().toLocaleTimeString([], {
-          hour: '2-digit',
-          minute: '2-digit'
-        }),
-        type: 'voice',
-        duration: formatDuration(duration),
-        audioUrl: audioUrl
-      };
-      setMessages((prev) => [...prev, newMessage]);
-      resetRecording();
-    }
-  }, [audioUrl, isRecording]);
-  const formatDuration = (sec: number) => {
-    const m = Math.floor(sec / 60);
-    const s = sec % 60;
-    return `${m}:${s.toString().padStart(2, '0')}`;
   };
-  const handleSend = (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
-    if (!inputText.trim()) return;
-    const newMessage: Message = {
-      id: Date.now().toString(),
-      text: inputText,
-      isSent: true,
-      time: new Date().toLocaleTimeString([], {
-        hour: '2-digit',
-        minute: '2-digit'
-      }),
-      type: 'text'
-    };
-    setMessages((prev) => [...prev, newMessage]);
-    setInputText('');
-    // Simulate typing reply
-    setTimeout(() => setIsTyping(true), 1000);
-    setTimeout(() => {
-      setIsTyping(false);
-      const reply: Message = {
-        id: Date.now().toString(),
-        text: 'Got it, thanks!',
-        isSent: false,
-        time: new Date().toLocaleTimeString([], {
-          hour: '2-digit',
-          minute: '2-digit'
-        }),
-        type: 'text'
-      };
-      setMessages((prev) => [...prev, reply]);
-    }, 3000);
-  };
-  const cycleFontSize = () => {
-    if (fontSize === 'normal') setFontSize('large');else
-    if (fontSize === 'large') setFontSize('xlarge');else
-    setFontSize('normal');
-  };
-  return (
-    <div
-      className={`flex flex-col h-full ${highContrast ? 'bg-black text-white' : 'bg-background-light'}`}>
-      
-      {/* Header */}
-      <header
-        className={`
-        px-4 py-3 flex items-center justify-between shadow-sm z-10
-        ${highContrast ? 'bg-gray-900 border-b-2 border-white' : 'bg-white'}
-      `}>
-        
-        <div className="flex items-center space-x-3">
-          <button
-            onClick={onBack}
-            className={`p-2 rounded-full ${highContrast ? 'bg-white text-black' : 'hover:bg-gray-100'}`}
-            aria-label={t('chat.back')}>
-            
-            <ArrowLeft size={24} />
-          </button>
 
-          <div className="flex flex-col">
-            <h1 className="font-bold text-lg leading-tight">{contactName}</h1>
-            <span
-              className={`text-xs ${highContrast ? 'text-green-300' : 'text-green-600'}`}>
-              
-              {t('chat.online')}
-            </span>
+  useEffect(() => {
+    const onOnline = () => void flushQueue();
+    window.addEventListener('online', onOnline);
+    void flushQueue();
+    return () => window.removeEventListener('online', onOnline);
+  }, [id]);
+
+  const sendText = async (text = inputText) => {
+    if (!id || !text.trim()) return;
+    const clientId = crypto.randomUUID();
+    const optimistic: ChatMessage = {
+      id: clientId,
+      conversationId: id,
+      senderId: user?.id || '',
+      senderName: user?.name || 'You',
+      type: 'text',
+      body: text,
+      status: navigator.onLine ? 'sent' : 'queued',
+      clientId,
+      source: 'original',
+      createdAt: new Date().toISOString()
+    };
+    setMessages((prev) => [...prev, optimistic]);
+    setInputText('');
+    if (!navigator.onLine) {
+      enqueueMessage({ clientId, conversationId: id, type: 'text', body: text, createdAt: optimistic.createdAt });
+      return;
+    }
+    try {
+      realtime.send({ type: 'typing', conversationId: id });
+      const sent = await api<{ message: ChatMessage }>(`/api/conversations/${id}/messages`, {
+        method: 'POST',
+        body: JSON.stringify({ type: 'text', body: text, clientId })
+      });
+      setMessages((prev) => prev.map((msg) => (msg.clientId === clientId ? sent.message : msg)));
+    } catch {
+      setMessages((prev) => prev.map((msg) => (msg.clientId === clientId ? { ...msg, status: 'failed' } : msg)));
+    }
+  };
+
+  const attachFile = async (file: File) => {
+    if (!id) return;
+    const kind = file.type.startsWith('image')
+      ? 'image'
+      : file.type.startsWith('video')
+        ? 'video'
+        : file.type.startsWith('audio')
+          ? 'audio'
+          : 'document';
+    const altText =
+      kind === 'image'
+        ? window.prompt('Describe this photograph so it can be read aloud. Leave blank only if you will add a description later.') || ''
+        : undefined;
+    const uploaded = await uploadMedia(file, { kind, filename: file.name, altText });
+    const sent = await api<{ message: ChatMessage }>(`/api/conversations/${id}/messages`, {
+      method: 'POST',
+      body: JSON.stringify({
+        type: kind,
+        mediaId: uploaded.media.id,
+        body: file.name,
+        source: 'original'
+      })
+    });
+    setMessages((prev) => [...prev, sent.message]);
+  };
+
+  const retry = async (message: ChatMessage) => {
+    if (!id) return;
+    const sent = await api<{ message: ChatMessage }>(`/api/messages/${message.id}/retry`, { method: 'POST' });
+    setMessages((prev) => prev.map((item) => (item.id === message.id ? sent.message : item)));
+  };
+
+  const startCall = async (type: 'voice' | 'video') => {
+    if (!conversation?.peer) return;
+    const saveTranscript = window.confirm(
+      'Save this call transcript on Unity? Captions still appear live if you say no. Only this call is saved if you say yes.'
+    );
+    const data = await api<{ call: { id: string } }>('/api/calls', {
+      method: 'POST',
+      body: JSON.stringify({
+        userId: conversation.peer.id,
+        type,
+        saveTranscript
+      })
+    });
+    navigate(`/calls/active/${data.call.id}`, { state: { outgoing: true, peerName: conversation.peer.name } });
+  };
+
+  const visible = useMemo(
+    () => messages.filter((msg) => !search || (msg.body || '').toLowerCase().includes(search.toLowerCase())),
+    [messages, search]
+  );
+
+  return (
+    <div className={`flex flex-col h-dvh ${highContrast ? 'bg-black text-white' : ''}`}>
+      <header className={`px-3 py-3 flex items-center justify-between ${highContrast ? 'border-b-2 border-white' : 'bg-white shadow-sm'}`}>
+        <div className="flex items-center gap-2 min-w-0">
+          <button type="button" className="p-2 min-h-[48px]" aria-label={t('chat.back')} onClick={() => navigate('/chats')}>
+            <ArrowLeft />
+          </button>
+          <div className="min-w-0">
+            <h1 className="font-bold truncate">{conversation?.peer?.name || 'Chat'}</h1>
+            <p className="text-xs opacity-70">{conversation?.peer?.language || ''}</p>
           </div>
         </div>
-
-        <div className="flex items-center space-x-2">
-          <button
-            onClick={cycleFontSize}
-            className={`p-2 rounded-full ${highContrast ? 'bg-gray-800 border border-white' : 'hover:bg-gray-100'}`}
-            aria-label={`Change text size. Current: ${fontSize}`}>
-            
-            <Type size={20} />
+        <div className="flex gap-1">
+          <button type="button" className="p-2 min-h-[48px]" aria-label="Search this conversation" onClick={() => setSearch(prompt('Search messages') || '')}>
+            <Search size={20} />
           </button>
-          <button
-            onClick={onCall}
-            className={`
-              flex items-center space-x-1 px-3 py-2 rounded-full font-semibold text-sm
-              ${highContrast ? 'bg-green-900 text-white border border-white' : 'bg-green-100 text-green-700'}
-            `}
-            aria-label={`${t('chat.call')} ${contactName}`}>
-            
-            <Phone size={18} />
-            <span>{t('chat.call')}</span>
+          <button type="button" className="p-2 min-h-[48px]" aria-label={`Voice call ${conversation?.peer?.name || ''}`} onClick={() => void startCall('voice')}>
+            <Phone size={20} />
+          </button>
+          <button type="button" className="p-2 min-h-[48px]" aria-label={`Video call ${conversation?.peer?.name || ''}`} onClick={() => void startCall('video')}>
+            <Video size={20} />
           </button>
         </div>
       </header>
 
-      {/* Messages Area */}
-      <main
-        className="flex-1 overflow-y-auto px-4 py-4"
-        role="log"
-        aria-label="Message history">
-        
-        {messages.map((msg) =>
-        <ChatBubble
-          key={msg.id}
-          message={msg.text}
-          isSent={msg.isSent}
-          timestamp={msg.time}
-          type={msg.type}
-          duration={msg.duration} />
-
-        )}
-
-        {isTyping &&
-        <div className="flex justify-start mb-4">
-            <div
-            className={`
-              px-4 py-3 rounded-2xl rounded-bl-none
-              ${highContrast ? 'bg-gray-800 border-2 border-white text-white' : 'bg-white border border-gray-200'}
-            `}>
-            
-              <span className="text-sm opacity-70 animate-pulse">
-                {t('chat.typing')}
-              </span>
-            </div>
-          </div>
-        }
-
-        <div ref={messagesEndRef} />
+      <main className="flex-1 overflow-y-auto px-4 py-4" role="log" aria-label="Message history">
+        {visible.map((msg) => (
+          <ChatBubble
+            key={msg.id}
+            message={msg.body || msg.type}
+            isSent={msg.senderId === user?.id}
+            timestamp={new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+            type={msg.type === 'voice' ? 'voice' : 'text'}
+            status={msg.status}
+            source={msg.source}
+            media={msg.media}
+            onRetry={msg.status === 'failed' ? () => void retry(msg) : undefined}
+          />
+        ))}
+        {typing && <p className="text-sm opacity-70">{t('chat.typing')}</p>}
+        <div ref={endRef} />
       </main>
 
-      {/* Input Area */}
-      <footer
-        className={`
-        p-4 border-t flex flex-col space-y-3
-        ${highContrast ? 'bg-gray-900 border-white' : 'bg-white border-gray-200'}
-      `}>
-        
-        {/* Quick Replies (only show if not recording) */}
-        {!isRecording &&
-        <QuickReplies
-          onSelect={(text) => {
-            setInputText(text);
-            // Optional: auto-send or just fill input
-          }} />
-
-        }
-
-        <form onSubmit={handleSend} className="flex items-end space-x-2">
-          <div
-            className={`
-            flex-1 rounded-2xl flex items-center border-2 transition-colors overflow-hidden
-            ${isRecording ? 'bg-red-50 border-red-500' : 'bg-gray-100 border-transparent focus-within:border-primary focus-within:bg-white'}
-          `}>
-            
-            {isRecording ?
-            <div className="flex-1 px-4 py-3 flex items-center justify-between text-red-600 font-medium animate-pulse">
-                <span>Recording... {formatDuration(duration)}</span>
-                <div className="flex space-x-1 h-4 items-end">
-                  {[1, 2, 3, 4, 5].map((i) =>
-                <div
-                  key={i}
-                  className="w-1 bg-red-500 animate-bounce"
-                  style={{
-                    height: `${Math.random() * 100}%`,
-                    animationDelay: `${i * 0.1}s`
-                  }} />
-
-                )}
-                </div>
-              </div> :
-
+      <footer className={`p-4 border-t ${highContrast ? 'border-white' : 'border-gray-200 bg-white'}`}>
+        {!recorder.isRecording && (
+          <QuickReplies
+            onSelect={(text) => {
+              setInputText(text);
+              void sendText(text);
+            }}
+          />
+        )}
+        <form
+          className="flex items-end gap-2 mt-2"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void sendText();
+          }}
+        >
+          {recorder.isRecording ? (
+            <p className="flex-1 py-3 text-red-600" aria-live="polite">
+              Recording {recorder.duration}s. {recorder.error}
+            </p>
+          ) : (
             <input
-              type="text"
               value={inputText}
               onChange={(e) => setInputText(e.target.value)}
               placeholder={t('chat.typeMessage')}
-              className="flex-1 bg-transparent px-4 py-3 focus:outline-none min-h-[48px]"
-              aria-label={t('chat.typeMessage')} />
-
-            }
-          </div>
-
-          {inputText && !isRecording ?
-          <button
-            type="submit"
-            className={`
-                p-3 rounded-full flex-shrink-0
-                ${highContrast ? 'bg-primary-dark border-2 border-white' : 'bg-primary text-white'}
-              `}
-            aria-label={t('chat.send')}>
-            
-              <Send size={24} />
-            </button> :
-
-          <button
-            type="button"
-            onClick={isRecording ? stopRecording : startRecording}
-            className={`
-                p-3 rounded-full flex-shrink-0 transition-colors
-                ${isRecording ? 'bg-red-600 text-white animate-pulse' : highContrast ? 'bg-gray-800 border-2 border-white' : 'bg-gray-200 text-gray-700'}
-              `}
-            aria-label={isRecording ? t('chat.stopRecord') : t('chat.record')}>
-            
-              {isRecording ? <StopCircle size={24} /> : <Mic size={24} />}
+              className="flex-1 min-h-[48px] px-4 rounded-2xl bg-gray-100"
+              aria-label={t('chat.typeMessage')}
+            />
+          )}
+          <label className="p-3 rounded-full bg-gray-100 min-h-[48px] min-w-[48px] inline-flex items-center justify-center">
+            <input
+              type="file"
+              className="sr-only"
+              accept="image/*,video/*,audio/*,.pdf,.txt,.doc,.docx"
+              aria-label="Attach a photo, video, or document"
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                if (file) void attachFile(file);
+                event.currentTarget.value = '';
+              }}
+            />
+            <Paperclip />
+          </label>
+          {inputText && !recorder.isRecording ? (
+            <button type="submit" className="p-3 rounded-full bg-primary text-white min-h-[48px]" aria-label={t('chat.send')}>
+              <Send />
             </button>
-          }
+          ) : (
+            <button
+              type="button"
+              className="p-3 rounded-full bg-gray-200 min-h-[48px]"
+              aria-pressed={recorder.isRecording}
+              aria-label={recorder.isRecording ? t('chat.stopRecord') : t('chat.record')}
+              onClick={() => (recorder.isRecording ? recorder.stopRecording() : void recorder.startRecording())}
+            >
+              {recorder.isRecording ? <StopCircle /> : <Mic />}
+            </button>
+          )}
         </form>
+        {recorder.error && <p role="alert" className="text-sm text-red-600 mt-2">{recorder.error}</p>}
       </footer>
-    </div>);
-
+    </div>
+  );
 }

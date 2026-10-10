@@ -1,121 +1,78 @@
-import React, { useEffect } from 'react';
-import { useAccessibility } from '../context/AccessibilityContext';
-import { Phone, PhoneOff, MessageSquare } from 'lucide-react';
+import { useEffect } from 'react';
+import { useLocation, useNavigate, useParams } from '../lib/router';
+import { Phone, PhoneOff } from 'lucide-react';
 import { motion } from 'framer-motion';
-interface IncomingCallPageProps {
-  onAccept: () => void;
-  onReject: () => void;
-  callerName?: string;
-}
-export function IncomingCallPage({
-  onAccept,
-  onReject,
-  callerName = 'Thandi Nkosi'
-}: IncomingCallPageProps) {
-  const { highContrast } = useAccessibility();
-  // Simulate vibration pattern
+import { useAccessibility } from '../context/AccessibilityContext';
+import { useAuth } from '../context/AuthContext';
+import { api } from '../lib/api';
+import { announce, vibrate } from '../lib/haptics';
+import type { CallRecord } from '../lib/types';
+
+export function IncomingCallPage() {
+  const { id } = useParams();
+  const location = useLocation();
+  const navigate = useNavigate();
+  const { highContrast, vibrationEnabled, ttsEnabled } = useAccessibility();
+  const { user } = useAuth();
+  const state = location.state as { call?: CallRecord; caller?: { name: string } } | null;
+  const callerName = state?.caller?.name || 'Incoming caller';
+
   useEffect(() => {
-    if (navigator.vibrate) {
-      navigator.vibrate([200, 100, 200, 100, 200, 100, 200]);
+    announce(`Incoming call from ${callerName}`);
+    if (vibrationEnabled) vibrate([250, 100, 250, 100, 400]);
+    if (ttsEnabled) {
+      window.speechSynthesis.cancel();
+      const utterance = new SpeechSynthesisUtterance(`Incoming call from ${callerName}. Accept or reject.`);
+      window.speechSynthesis.speak(utterance);
     }
-  }, []);
+    if ('Notification' in window && Notification.permission !== 'denied') {
+      void Notification.requestPermission();
+    }
+  }, [callerName, ttsEnabled, vibrationEnabled]);
+
+  const act = async (action: 'accept' | 'reject') => {
+    if (!id) return;
+    window.speechSynthesis.cancel();
+    await api(`/api/calls/${id}/${action}`, { method: 'POST' });
+    if (action === 'accept') navigate(`/calls/active/${id}`, { state: { incoming: true, peerName: callerName } });
+    else navigate('/chats');
+  };
+
   return (
-    <div
-      className={`
-      flex flex-col h-full relative overflow-hidden
-      ${highContrast ? 'bg-black' : 'bg-gradient-to-b from-teal-900 to-gray-900'}
-    `}>
-      
-      {/* Visual Alert Flash */}
+    <div className={`flex flex-col min-h-dvh ${highContrast ? 'bg-black' : 'bg-gradient-to-b from-teal-900 to-gray-900'} text-white`}>
       <motion.div
         className="absolute inset-0 bg-white/10 pointer-events-none"
-        animate={{
-          opacity: [0, 0.2, 0]
-        }}
-        transition={{
-          repeat: Infinity,
-          duration: 1.5
-        }} />
-      
-
-      <main className="flex-1 flex flex-col items-center justify-center p-8 text-center z-10">
-        {/* Caller Info */}
-        <div className="mb-12 relative">
-          <motion.div
-            className="absolute inset-0 rounded-full bg-white/20"
-            animate={{
-              scale: [1, 1.5],
-              opacity: [0.5, 0]
-            }}
-            transition={{
-              repeat: Infinity,
-              duration: 2
-            }} />
-          
-          <div
-            className={`
-            w-32 h-32 rounded-full flex items-center justify-center text-3xl font-bold relative z-10
-            ${highContrast ? 'bg-white text-black border-4 border-white' : 'bg-purple-200 text-purple-800 shadow-2xl'}
-          `}>
-            
-            TN
-          </div>
+        animate={user ? { opacity: [0, 0.25, 0] } : undefined}
+        transition={{ repeat: Infinity, duration: 1.4 }}
+      />
+      <main className="flex-1 flex flex-col items-center justify-center p-8 text-center">
+        <div className="w-32 h-32 rounded-full bg-white text-primary flex items-center justify-center text-4xl font-bold mb-6">
+          {callerName.slice(0, 1)}
         </div>
-
-        <h1 className="text-4xl font-bold text-white mb-4 tracking-tight">
-          {callerName}
-        </h1>
-        <p className="text-xl text-teal-100 mb-8 font-medium">
-          Incoming Call...
-        </p>
-
-        {/* Accessibility Indicators */}
-        <div
-          className={`
-          px-4 py-2 rounded-full mb-8 flex items-center space-x-2
-          ${highContrast ? 'bg-gray-800 border border-white' : 'bg-black/30 backdrop-blur-sm'}
-        `}>
-          
-          <MessageSquare size={16} className="text-yellow-400" />
-          <span className="text-white text-sm font-medium">
-            This caller uses captions
-          </span>
-        </div>
-
-        <div className="text-white/60 text-sm flex items-center space-x-2">
-          <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
-          <span>Vibration Active</span>
-        </div>
+        <h1 className="text-4xl font-bold mb-2">{callerName}</h1>
+        <p className="text-xl mb-6">Incoming call</p>
+        <p className="text-sm opacity-80">Visual flash, spoken name, and vibration are on if you enabled them. Call audio starts only after you accept.</p>
       </main>
-
-      {/* Actions */}
-      <footer className="p-8 pb-12 z-10">
-        <div className="flex justify-between items-center gap-6">
-          <button
-            onClick={onReject}
-            className={`
-              flex-1 flex flex-col items-center justify-center py-6 rounded-2xl space-y-2 transition-transform active:scale-95
-              ${highContrast ? 'bg-red-900 border-2 border-white text-white' : 'bg-danger text-white shadow-lg shadow-red-900/20'}
-            `}
-            aria-label="Reject call">
-            
-            <PhoneOff size={32} />
-            <span className="font-bold text-lg">Reject</span>
-          </button>
-
-          <button
-            onClick={onAccept}
-            className={`
-              flex-1 flex flex-col items-center justify-center py-6 rounded-2xl space-y-2 transition-transform active:scale-95
-              ${highContrast ? 'bg-green-900 border-2 border-white text-white' : 'bg-success text-white shadow-lg shadow-green-900/20'}
-            `}
-            aria-label="Accept call">
-            
-            <Phone size={32} />
-            <span className="font-bold text-lg">Accept</span>
-          </button>
-        </div>
+      <footer className="p-8 grid grid-cols-2 gap-4">
+        <button
+          type="button"
+          onClick={() => void act('reject')}
+          className="min-h-[72px] rounded-2xl bg-danger text-white"
+          aria-label="Reject call"
+        >
+          <PhoneOff className="mx-auto mb-1" />
+          Reject
+        </button>
+        <button
+          type="button"
+          onClick={() => void act('accept')}
+          className="min-h-[72px] rounded-2xl bg-success text-white"
+          aria-label="Accept call"
+        >
+          <Phone className="mx-auto mb-1" />
+          Accept
+        </button>
       </footer>
-    </div>);
-
+    </div>
+  );
 }

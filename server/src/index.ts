@@ -583,6 +583,23 @@ app.post('/api/desks/:id/queue', (req, res) => {
   json(res, 200, { item: db.joinQueue(user.id, req.params.id) });
 });
 
+app.get('/api/guest-links', (req, res) => {
+  const user = requireUser(req);
+  json(res, 200, { links: db.listGuestLinks(user.id) });
+});
+
+app.delete('/api/guest-links/:id', (req, res) => {
+  const user = requireUser(req);
+  const link = db.listGuestLinks(user.id).find(item => item.id === req.params.id);
+  if (!link) return json(res, 404, { error: 'Invitation not found.' });
+  db.revokeGuestLink(user.id, req.params.id);
+  const room = guestRooms.get(link.token);
+  room?.host?.close();
+  room?.guest?.close();
+  guestRooms.delete(link.token);
+  json(res, 200, { ok: true });
+});
+
 app.post('/api/guest-links', (req, res) => {
   const user = requireUser(req);
   const purpose = String(req.body.purpose || 'call');
@@ -602,7 +619,7 @@ app.get('/api/guest/:token/ice', (req, res) => {
 app.get('/api/guest/:token', (req, res) => {
   const link = db.getGuestLink(req.params.token);
   if (!link) return json(res, 404, { error: 'This invitation has expired.' });
-  json(res, 200, { link });
+  json(res, 200, { link: { id: link.id, purpose: link.purpose, expiresAt: link.expiresAt } });
 });
 
 app.post('/api/consent', (req, res) => {

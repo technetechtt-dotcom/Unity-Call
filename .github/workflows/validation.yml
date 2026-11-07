@@ -23,6 +23,9 @@ jobs:
         run: npx tsc --noEmit
       - name: Lint
         run: npm run lint
+      - name: HTTP security integration tests
+        if: always()
+        run: node --experimental-strip-types --test server/src/http.test.ts
       - name: Isolated backend self-check
         if: always()
         run: npm test

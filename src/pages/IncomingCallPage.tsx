@@ -34,7 +34,7 @@ export function IncomingCallPage() {
     if (!id) return;
     window.speechSynthesis.cancel();
     await api(`/api/calls/${id}/${action}`, { method: 'POST' });
-    if (action === 'accept') navigate(`/calls/active/${id}`, { state: { incoming: true, peerName: callerName } });
+    if (action === 'accept') navigate(`/calls/active/${id}`, { state: { incoming: true, peerName: callerName, callType: state?.call?.type } });
     else navigate('/chats');
   };
 

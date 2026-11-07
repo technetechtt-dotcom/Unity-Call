@@ -1,6 +1,19 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { parse } from 'node:url';
 
+const requestLimits = new Map<string, { count: number; expires: number }>();
+function guardTraffic(req: IncomingMessage) {
+  const now = Date.now();
+  const key = req.socket.remoteAddress || 'unknown';
+  const previous = requestLimits.get(key);
+  const value = previous && previous.expires > now ? previous : { count: 0, expires: now + 5 * 60 * 1000 };
+  value.count += 1;
+  requestLimits.set(key, value);
+  if (requestLimits.size > 10000) for (const [id, entry] of requestLimits) if (entry.expires <= now) requestLimits.delete(id);
+  if (value.count > 1200) throw Object.assign(new Error('Too many requests.'), { status: 429 });
+}
+
+
 export type Req = IncomingMessage & {
   params: Record<string, string>;
   query: Record<string, string>;
@@ -71,7 +84,9 @@ export async function readBody(req: IncomingMessage) {
     chunks.push(chunk as Buffer);
   }
   if (!chunks.length) return {};
-  return JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}');
+  const body = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}');
+  if (body === null || typeof body !== 'object' || Array.isArray(body)) throw Object.assign(new Error('JSON object expected.'), { status: 400 });
+  return body;
 }
 
 export function createHttpServer(app: ReturnType<typeof createApp>, onUpgrade?: (req: IncomingMessage, socket: import('node:stream').Duplex) => void) {
@@ -87,12 +102,15 @@ export function createHttpServer(app: ReturnType<typeof createApp>, onUpgrade?: 
       res.end();
       return;
     }
-    const matched = app.match(req);
-    if (!matched) {
-      json(res, 404, { error: 'Not found.' });
-      return;
-    }
+    const startedAt = Date.now();
+    res.on('finish', () => {
+      const pathname = (req.url || '/').split('?')[0].replace(/\/api\/guest\/[^/]+/, '/api/guest/[redacted]');
+      console.log(JSON.stringify({ level: 'info', event: 'http_request', method: req.method, path: pathname, status: res.statusCode, durationMs: Date.now() - startedAt }));
+    });
     try {
+      guardTraffic(req);
+      const matched = app.match(req);
+      if (!matched) { json(res, 404, { error: 'Not found.' }); return; }
       const body = req.method === 'GET' ? {} : await readBody(req);
       const wrapped = Object.assign(req, {
         params: matched.params,
@@ -102,7 +120,8 @@ export function createHttpServer(app: ReturnType<typeof createApp>, onUpgrade?: 
       await matched.handler(wrapped, res);
     } catch (error) {
       const status = error && typeof error === 'object' && 'status' in error ? Number((error as { status: number }).status) : 400;
-      json(res, status || 400, { error: error instanceof Error ? error.message : 'Request failed.' });
+      if (status >= 500) console.error(JSON.stringify({ level: 'error', event: 'request_failed', status, message: error instanceof Error ? error.message : 'Unknown error' }));
+      json(res, status || 400, { error: status >= 500 ? 'Server error. Please try again later.' : error instanceof Error ? error.message : 'Request failed.' });
     }
   });
   if (onUpgrade) server.on('upgrade', onUpgrade);

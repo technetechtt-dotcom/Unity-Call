@@ -1,6 +1,7 @@
+import { api } from './api';
+
 export async function getIceServers() {
-  const response = await fetch('/api/ice');
-  const data = await response.json();
+  const data = await api<{ iceServers: RTCIceServer[] }>('/api/ice');
   return data.iceServers as RTCIceServer[];
 }
 

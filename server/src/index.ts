@@ -691,10 +691,14 @@ const server = createHttpServer(app, (req, socket) => {
 
 const cleanup = setInterval(() => {
   try {
+    for (const call of db.expireRingingCalls()) {
+      sendTo(call.initiatorId, { type: 'call:state', call });
+      sendTo(call.calleeId, { type: 'call:state', call });
+    }
     const removed = db.pruneExpired();
     if (removed) console.log(JSON.stringify({ level: 'info', event: 'expired_record_cleanup', count: removed }));
   } catch (error) { console.error('Retention cleanup failed', error); }
-}, 60 * 60 * 1000);
+}, 15 * 1000);
 cleanup.unref();
 
 server.listen(PORT, () => {

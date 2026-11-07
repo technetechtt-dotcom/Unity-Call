@@ -481,16 +481,21 @@ export class Database {
       .sort((a, b) => (b.lastMessage?.createdAt || '').localeCompare(a.lastMessage?.createdAt || ''));
   }
 
-  listMessages(conversationId: string, userId: string, query?: string) {
+  listMessages(conversationId: string, userId: string, query?: string, limit?: number, before?: string) {
     this.assertMember(conversationId, userId);
     let rows = this.store.messages.filter((m) => m.conversationId === conversationId);
     if (query) {
       const q = query.toLowerCase();
       rows = rows.filter((m) => (m.body || '').toLowerCase().includes(q));
     }
-    return rows
-      .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
-      .map((m) => this.hydrateMessage(m));
+    if (before) {
+      const cursor = this.store.messages.find(m => m.id === before && m.conversationId === conversationId);
+      if (!cursor) throw new Error('Invalid pagination cursor.');
+      rows = rows.filter(m => m.createdAt < cursor.createdAt || (m.createdAt === cursor.createdAt && m.id < cursor.id));
+    }
+    rows = rows.sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
+    if (limit) rows = rows.slice(-limit);
+    return rows.map((m) => this.hydrateMessage(m));
   }
 
   hydrateMessage(message: Message) {
@@ -557,9 +562,35 @@ export class Database {
 
   updateMessageStatus(id: string, userId: string, status: MessageStatus) {
     const message = this.store.messages.find((m) => m.id === id);
-    if (!message) throw new Error('Message not found.');
+    if (!message || message.senderId !== userId) throw new Error('Message not found.');
     this.assertMember(message.conversationId, userId);
+    if (status !== 'sent' || !['queued', 'failed', 'sent'].includes(message.status)) throw new Error('Invalid message status update.');
     message.status = status;
+    this.persist();
+    return this.hydrateMessage(message);
+  }
+
+  acknowledgeMessage(id: string, recipientId: string) {
+    const message = this.store.messages.find(m => m.id === id);
+    if (!message || message.senderId === recipientId) throw new Error('Message not found.');
+    this.assertMember(message.conversationId, recipientId);
+    if (this.isBlocked(message.senderId, recipientId)) throw new Error('Conversation is blocked.');
+    if (message.status === 'sent') {
+      message.status = 'delivered';
+      this.persist();
+    }
+    return { messageId: message.id, conversationId: message.conversationId, senderId: message.senderId, status: message.status };
+  }
+
+  deleteMessage(messageId: string, userId: string) {
+    const message = this.store.messages.find(m => m.id === messageId && m.senderId === userId);
+    if (!message) throw new Error('Message not found or not owned by you.');
+    this.assertMember(message.conversationId, userId);
+    // Preserve message ordering and delivery history while removing the content.
+    message.body = undefined;
+    message.mediaId = undefined;
+    message.type = 'system';
+    message.source = 'original';
     this.persist();
     return this.hydrateMessage(message);
   }

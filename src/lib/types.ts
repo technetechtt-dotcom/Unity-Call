@@ -58,6 +58,7 @@ export interface CallRecord {
   type: 'voice' | 'video';
   status: string;
   saveTranscript: boolean;
+  transcriptRequested?: boolean;
   startedAt?: string;
   endedAt?: string;
   durationSeconds?: number;

@@ -689,7 +689,7 @@ const server = createHttpServer(app, (req, socket) => {
       const sessionUser = db.getSessionUser(tokenFrom(req));
       const role: 'host' | 'guest' = sessionUser?.id === link.createdBy ? 'host' : 'guest';
       const room = guestRooms.get(token) || {};
-      if (room[role]?.readyState === room[role]?.OPEN) {
+      if (room[role] && room[role].readyState === room[role].OPEN) {
         client.send(JSON.stringify({ type: 'guest:error', error: 'This room already has a participant in that role.' }));
         return;
       }

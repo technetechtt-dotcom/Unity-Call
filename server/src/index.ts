@@ -9,6 +9,39 @@ import { MiniSocket, upgradeWebSocket } from './ws.ts';
 
 const PORT = Number(process.env.PORT || 8787);
 const DEV = process.env.NODE_ENV !== 'production';
+const otpLimits = new Map<string, { count: number; resetAt: number }>();
+function limitOtp(key: string, max: number, windowMs: number) {
+  const time = Date.now();
+  const previous = otpLimits.get(key);
+  const entry = previous && previous.resetAt > time ? previous : { count: 0, resetAt: time + windowMs };
+  entry.count += 1;
+  otpLimits.set(key, entry);
+  if (otpLimits.size > 20000) for (const [k, value] of otpLimits) if (value.resetAt <= time) otpLimits.delete(k);
+  if (entry.count > max) throw Object.assign(new Error('Too many requests. Try again later.'), { status: 429 });
+}
+
+async function deliverOtp(destination: string, code: string) {
+  if (destination.includes('@')) {
+    const key = process.env.RESEND_API_KEY;
+    const sender = process.env.OTP_FROM_EMAIL;
+    if (!key || !sender) throw Object.assign(new Error('Email delivery is not configured.'), { status: 503 });
+    const response = await fetch('https://api.resend.com/emails', {
+      method: 'POST', headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ from: sender, to: [destination], subject: 'Unity Call verification code', text: `Your Unity Call code is ${code}. It expires in 10 minutes. Never share this code.` })
+    });
+    if (!response.ok) throw Object.assign(new Error('Could not send verification email.'), { status: 502 });
+    return;
+  }
+  const sid = process.env.TWILIO_ACCOUNT_SID;
+  const token = process.env.TWILIO_AUTH_TOKEN;
+  const sender = process.env.TWILIO_FROM_NUMBER;
+  if (!sid || !token || !sender) throw Object.assign(new Error('SMS delivery is not configured.'), { status: 503 });
+  const form = new URLSearchParams({ To: destination, From: sender, Body: `Your Unity Call code is ${code}. Expires in 10 minutes.` });
+  const response = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${encodeURIComponent(sid)}/Messages.json`, {
+    method: 'POST', headers: { Authorization: `Basic ${Buffer.from(`${sid}:${token}`).toString('base64')}`, 'Content-Type': 'application/x-www-form-urlencoded' }, body: form
+  });
+  if (!response.ok) throw Object.assign(new Error('Could not send verification SMS.'), { status: 502 });
+}
 mkdirSync(db.uploadRoot, { recursive: true });
 
 type SocketClient = MiniSocket;
@@ -61,26 +94,34 @@ app.get('/api/ice', (_req, res) => {
   json(res, 200, { iceServers: ice, turnConfigured: Boolean(process.env.TURN_URLS) });
 });
 
-app.post('/api/auth/otp/request', (req, res) => {
+app.post('/api/auth/otp/request', async (req, res) => {
   const destination = dest(req.body);
   const purpose = req.body.purpose as 'register' | 'login' | 'recovery';
-  if (!destination || !purpose) return json(res, 400, { error: 'Enter a phone number or email.' });
+  if (!['register', 'login', 'recovery'].includes(purpose) || !(destination.includes('@') ? /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(destination) : /^\+[1-9]\d{7,14}$/.test(destination))) {
+    return json(res, 400, { error: 'Enter a valid email address or phone number with country code.' });
+  }
+  const clientIp = String(req.socket.remoteAddress || 'unknown');
+  limitOtp('ip:' + clientIp, 20, 15 * 60 * 1000);
+  limitOtp('destination:' + destination, 5, 60 * 60 * 1000);
   const existing = db.findUserByDestination(destination);
-  if (purpose === 'register' && existing) return json(res, 409, { error: 'That account already exists. Sign in instead.' });
-  if ((purpose === 'login' || purpose === 'recovery') && !existing) {
-    return json(res, 404, { error: 'No account found for that phone or email.' });
+  // Uniform response prevents account discovery through request status.
+  if ((purpose === 'register' && existing) || (purpose !== 'register' && !existing)) {
+    return json(res, 200, { ok: true, delivery: 'if-eligible' });
   }
   const otp = db.createOtp(destination, purpose);
+  if (!DEV) await deliverOtp(destination, otp.code);
   json(res, 200, {
     ok: true,
     expiresAt: otp.expiresAt,
-    delivery: 'development',
+    delivery: DEV ? 'development' : 'sent',
     ...(DEV ? { devCode: otp.code } : {})
   });
 });
 
 app.post('/api/auth/otp/verify', (req, res) => {
   const destination = dest(req.body);
+  limitOtp('verify-ip:' + String(req.socket.remoteAddress || 'unknown'), 40, 15 * 60 * 1000);
+  limitOtp('verify-destination:' + destination, 12, 15 * 60 * 1000);
   db.verifyOtp(destination, req.body.purpose as 'register' | 'login' | 'recovery', String(req.body.code || ''));
   let user = db.findUserByDestination(destination);
   if (req.body.purpose === 'register') {

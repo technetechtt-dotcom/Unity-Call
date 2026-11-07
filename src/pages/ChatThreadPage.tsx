@@ -63,6 +63,9 @@ export function ChatThreadPage() {
         setTyping(true);
         window.setTimeout(() => setTyping(false), 2000);
       }
+      if (payload.type === 'message:status' && payload.conversationId === id && payload.status === 'read' && !payload.messageId) {
+        setMessages(prev => prev.map(item => item.senderId === user?.id && item.status !== 'failed' && item.status !== 'queued' ? { ...item, status: 'read' } : item));
+      }
       if (payload.type === 'message:status' && payload.messageId) {
         setMessages((prev) =>
           prev.map((item) =>
@@ -74,7 +77,7 @@ export function ChatThreadPage() {
     return () => {
       unsubscribe();
     };
-  }, [id]);
+  }, [id, user?.id]);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth' });

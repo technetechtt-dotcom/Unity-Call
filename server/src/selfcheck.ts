@@ -40,7 +40,5 @@ assert(isolated, 'strangers must not read private conversations');
 
 db.blockUser(alice.id, bob.id);
 assert(db.isBlocked(alice.id, bob.id), 'block should isolate both sides');
-
-assert(db.isBlocked(alice.id, bob.id), 'block should isolate both sides');
 rmSync(tempDirectory, { recursive: true, force: true });
 console.log('Unity self-check passed: isolated sessions, accepted contacts, messaging permissions and blocking.');

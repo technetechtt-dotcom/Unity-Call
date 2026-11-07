@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams } from '../lib/router';
-import { Hand, History, Mic, MicOff, PhoneOff, Subtitles, Type } from 'lucide-react';
+import { Camera, CameraOff, Hand, History, Mic, MicOff, PhoneOff, Subtitles, Type } from 'lucide-react';
 import { useAccessibility } from '../context/AccessibilityContext';
 import { useAuth } from '../context/AuthContext';
 import { useSpeechRecognition } from '../hooks/useSpeechRecognition';
@@ -23,6 +23,9 @@ export function ActiveCallPage() {
   const state = location.state as { outgoing?: boolean; incoming?: boolean; peerName?: string; callType?: 'voice' | 'video' } | null;
   const peerName = state?.peerName || 'Participant';
   const [muted, setMuted] = useState(false);
+  const [cameraOff, setCameraOff] = useState(false);
+  const [availableInputs, setAvailableInputs] = useState<MediaDeviceInfo[]>([]);
+  const [deviceError, setDeviceError] = useState('');
   const [captionsOn, setCaptionsOn] = useState(true);
   const [captionLanguage, setCaptionLanguage] = useState(language);
   const [showHistory, setShowHistory] = useState(false);
@@ -64,6 +67,7 @@ export function ActiveCallPage() {
       }
       localStream.current = stream;
       if (localVideo.current) localVideo.current.srcObject = stream;
+      void navigator.mediaDevices.enumerateDevices().then(devices => setAvailableInputs(devices.filter(device => device.kind === 'audioinput' || device.kind === 'videoinput'))).catch(() => {});
       const pc = await createPeerConnection((remote) => {
         if (remoteVideo.current) remoteVideo.current.srcObject = remote;
       });
@@ -185,6 +189,23 @@ export function ActiveCallPage() {
     });
   }, [id, spoken, user]);
 
+  const switchDevice = async (kind: 'audio' | 'video', deviceId: string) => {
+    if (!localStream.current || !peer.current) return;
+    setDeviceError('');
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia(kind === 'audio' ? { audio: { deviceId: { exact: deviceId } }, video: false } : { video: { deviceId: { exact: deviceId } }, audio: false });
+      const newTrack = stream.getTracks()[0];
+      const oldTrack = localStream.current.getTracks().find(track => track.kind === kind);
+      const sender = peer.current.getSenders().find(item => item.track?.kind === kind);
+      if (!sender || !newTrack) { stream.getTracks().forEach(track => track.stop()); throw new Error('Device is unavailable for this call.'); }
+      newTrack.enabled = kind === 'audio' ? !muted : !cameraOff;
+      try { await sender.replaceTrack(newTrack); } catch (error) { newTrack.stop(); throw error; }
+      if (oldTrack) { localStream.current.removeTrack(oldTrack); oldTrack.stop(); }
+      localStream.current.addTrack(newTrack);
+      if (kind === 'video' && localVideo.current) localVideo.current.srcObject = localStream.current;
+    } catch (error) { setDeviceError(error instanceof Error ? error.message : 'Could not change media device.'); }
+  };
+
   const toggleMute = () => {
     const next = !muted;
     setMuted(next);
@@ -243,6 +264,21 @@ export function ActiveCallPage() {
         <p className="text-xs opacity-70 mt-1">{saveNotice}</p>
       </header>
 
+      {deviceError && <p className="px-4 text-yellow-300" role="alert">{deviceError}</p>}
+      {availableInputs.length > 0 && <div className="flex flex-wrap gap-3 px-4 py-2">
+        <label className="text-sm">Microphone
+          <select aria-label="Microphone selection" defaultValue="" className="block rounded bg-gray-800 text-white p-2" onChange={event => void switchDevice('audio', event.target.value)}>
+            <option value="" disabled>Select microphone</option>
+            {availableInputs.filter(device => device.kind === 'audioinput').map((device, index) => <option key={device.deviceId} value={device.deviceId}>{device.label || `Microphone ${index + 1}`}</option>)}
+          </select>
+        </label>
+        {state?.callType !== 'voice' && <label className="text-sm">Camera
+          <select aria-label="Camera selection" defaultValue="" className="block rounded bg-gray-800 text-white p-2" onChange={event => void switchDevice('video', event.target.value)}>
+            <option value="" disabled>Select camera</option>
+            {availableInputs.filter(device => device.kind === 'videoinput').map((device, index) => <option key={device.deviceId} value={device.deviceId}>{device.label || `Camera ${index + 1}`}</option>)}
+          </select>
+        </label>}
+      </div>}
       <div className="grid grid-cols-2 gap-2 px-4">
         <video ref={localVideo} autoPlay muted playsInline className="rounded-xl bg-black h-32 object-cover" aria-label="Your camera" />
         <video ref={remoteVideo} autoPlay playsInline className="rounded-xl bg-black h-32 object-cover" aria-label="Other participant" />
@@ -323,13 +359,17 @@ export function ActiveCallPage() {
         <button type="button" className="px-3 py-2 rounded-full bg-white/10" onClick={() => action('spell', user?.name)}>Spell the name</button>
       </div>
 
-      <footer className="p-4 grid grid-cols-5 gap-2">
+      <footer className="p-4 flex flex-wrap items-center justify-around gap-2">
         <button type="button" onClick={toggleMute} aria-pressed={muted} aria-label={muted ? 'Unmute microphone' : 'Mute microphone'} className="text-center">
           <div className={`mx-auto w-12 h-12 rounded-full flex items-center justify-center ${muted ? 'bg-white text-black' : 'bg-white/10'}`}>
             {muted ? <MicOff /> : <Mic />}
           </div>
           <span className="text-[10px]">{muted ? 'Muted' : 'Mute'}</span>
         </button>
+        {state?.callType !== 'voice' && <button type="button" onClick={() => { const next = !cameraOff; setCameraOff(next); setTrackEnabled(localStream.current, 'video', !next); }} aria-pressed={cameraOff} aria-label={cameraOff ? 'Turn camera on' : 'Turn camera off'} className="text-center">
+          <div className="mx-auto w-12 h-12 rounded-full bg-white/10 flex items-center justify-center">{cameraOff ? <CameraOff /> : <Camera />}</div>
+          <span className="text-[10px]">{cameraOff ? 'Camera off' : 'Camera on'}</span>
+        </button>}
         <button type="button" onClick={() => setShowSign((value) => !value)} aria-pressed={showSign} aria-label="Sign language panel" className="text-center">
           <div className="mx-auto w-12 h-12 rounded-full bg-white/10 flex items-center justify-center"><Hand /></div>
           <span className="text-[10px]">Sign</span>

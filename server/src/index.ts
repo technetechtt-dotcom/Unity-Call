@@ -235,9 +235,13 @@ app.post('/api/messages/:id/retry', (req, res) => {
 app.post('/api/media', (req, res) => {
   const user = requireUser(req);
   const data = String(req.body.data || '');
+  if (data.length > 14_000_000) return json(res, 413, { error: 'Maximum upload size is 10 MB.' });
   if (!data) return json(res, 400, { error: 'Choose a file to upload.' });
   const buffer = Buffer.from(data, 'base64');
-  const ext = String(req.body.filename || 'file.bin').split('.').pop() || 'bin';
+  if (buffer.length > 10 * 1024 * 1024) return json(res, 413, { error: 'Maximum upload size is 10 MB.' });
+  const allowedMime = new Set(['image/jpeg', 'image/png', 'image/webp', 'audio/webm', 'audio/ogg', 'audio/mpeg', 'audio/mp4', 'video/mp4', 'video/webm', 'application/pdf', 'text/plain']);
+  if (!allowedMime.has(String(req.body.mime))) return json(res, 415, { error: 'Unsupported media type.' });
+  const ext = String(req.body.filename || 'file.bin').split('.').pop()?.replace(/[^a-z0-9]/gi, '').slice(0, 10) || 'bin';
   const filename = `${Date.now()}-${randomUUID()}.${ext}`;
   const destPath = path.join(db.uploadRoot, filename);
   writeFileSync(destPath, buffer);
@@ -302,6 +306,7 @@ app.post('/api/calls', (req, res) => {
 app.post('/api/calls/:id/:action', (req, res) => {
   const user = requireUser(req);
   const action = req.params.action;
+  if (!['accept', 'reject', 'busy', 'missed', 'reconnect', 'end'].includes(action)) return json(res, 400, { error: 'Invalid call action.' });
   const status =
     action === 'accept' ? 'accepted' :
     action === 'reject' ? 'rejected' :
@@ -465,19 +470,20 @@ const server = createHttpServer(app, (req, socket) => {
     }
     if (payload.type === 'call:signal' && payload.callId) {
       const call = db.getCall(String(payload.callId));
-      if (!call) return;
+      if (!call || (call.initiatorId !== userId && call.calleeId !== userId) || !['ringing', 'accepted', 'reconnecting'].includes(call.status)) return;
       const otherId = call.initiatorId === userId ? call.calleeId : call.initiatorId;
       sendTo(otherId, { type: 'call:signal', callId: call.id, signal: payload.signal, from: userId });
     }
     if (payload.type === 'call:action' && payload.callId) {
       const call = db.getCall(String(payload.callId));
-      if (!call) return;
+      if (!call || (call.initiatorId !== userId && call.calleeId !== userId) || !['ringing', 'accepted', 'reconnecting'].includes(call.status)) return;
       const otherId = call.initiatorId === userId ? call.calleeId : call.initiatorId;
       sendTo(otherId, { type: 'call:action', callId: call.id, action: payload.action, value: payload.value, from: userId });
     }
     if (payload.type === 'call:tts' && payload.callId) {
       const call = db.getCall(String(payload.callId));
-      if (!call) return;
+      if (!call || (call.initiatorId !== userId && call.calleeId !== userId) || !['accepted', 'reconnecting'].includes(call.status)) return;
+      if (typeof payload.text !== 'string' || payload.text.length > 2000) return;
       const otherId = call.initiatorId === userId ? call.calleeId : call.initiatorId;
       sendTo(otherId, { type: 'call:tts', callId: call.id, text: payload.text, from: userId });
     }

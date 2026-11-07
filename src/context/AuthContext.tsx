@@ -94,7 +94,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       await api('/api/auth/logout', { method: 'POST' });
     } finally {
       realtime.disconnect();
-      setToken(null);
+      clearLegacyToken();
       setUser(null);
     }
   }, []);
@@ -102,7 +102,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const deleteAccount = useCallback(async () => {
     await api('/api/auth/account', { method: 'DELETE' });
     realtime.disconnect();
-    setToken(null);
+    clearLegacyToken();
     setUser(null);
   }, []);
 

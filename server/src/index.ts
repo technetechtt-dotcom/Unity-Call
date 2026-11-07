@@ -276,7 +276,11 @@ app.post('/api/conversations', (req, res) => {
 
 app.get('/api/conversations/:id/messages', (req, res) => {
   const user = requireUser(req);
-  json(res, 200, { messages: db.listMessages(req.params.id, user.id, req.query.q) });
+  const rawLimit = req.query.limit;
+  const limit = rawLimit ? Number(rawLimit) : undefined;
+  if (limit !== undefined && (!Number.isInteger(limit) || limit < 1 || limit > 100)) return json(res, 400, { error: 'Limit must be between 1 and 100.' });
+  const messages = db.listMessages(req.params.id, user.id, req.query.q, limit, req.query.before);
+  json(res, 200, { messages, nextCursor: limit && messages.length === limit ? messages[0]?.id : null });
 });
 
 app.post('/api/conversations/:id/read', (req, res) => {
@@ -300,12 +304,17 @@ app.post('/api/conversations/:id/messages', (req, res) => {
   });
   const conversation = db.listConversations(user.id).find((item) => item.id === req.params.id);
   if (conversation?.peer) {
-    const received = sendTo(conversation.peer.id, { type: 'message', message, conversationId: req.params.id });
-    if (received) {
-      db.updateMessageStatus(message.id, user.id, 'delivered');
-      sendTo(user.id, { type: 'message:status', messageId: message.id, status: 'delivered' });
-    }
+    sendTo(conversation.peer.id, { type: 'message', message, conversationId: req.params.id });
   }
+  json(res, 200, { message });
+});
+
+app.delete('/api/messages/:id', (req, res) => {
+  const user = requireUser(req);
+  const message = db.deleteMessage(req.params.id, user.id);
+  const conversation = db.listConversations(user.id).find(item => item.id === message.conversationId);
+  if (conversation?.peer) sendTo(conversation.peer.id, { type: 'message:deleted', messageId: message.id, conversationId: message.conversationId });
+  sendTo(user.id, { type: 'message:deleted', messageId: message.id, conversationId: message.conversationId });
   json(res, 200, { message });
 });
 
@@ -642,6 +651,13 @@ const server = createHttpServer(app, (req, socket) => {
       return;
     }
     const userId = client.userId;
+    if (payload.type === 'message:received' && typeof payload.messageId === 'string') {
+      try {
+        const receipt = db.acknowledgeMessage(payload.messageId, userId);
+        sendTo(receipt.senderId, { type: 'message:status', messageId: receipt.messageId, conversationId: receipt.conversationId, status: receipt.status });
+      } catch { /* Reject delivery acknowledgements from non-participants. */ }
+      return;
+    }
     if (payload.type === 'typing' && payload.conversationId) {
       const conversation = db.listConversations(userId).find((item) => item.id === payload.conversationId);
       if (conversation?.peer) sendTo(conversation.peer.id, { type: 'typing', conversationId: payload.conversationId, userId });

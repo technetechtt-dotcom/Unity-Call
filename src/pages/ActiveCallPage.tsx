@@ -21,7 +21,8 @@ export function ActiveCallPage() {
   const { highContrast, fontSize, setFontSize, language, captionOverlayOpacity, signLanguageEnabled, signAvatarEnabled, ttsEnabled } = useAccessibility();
   const { speak, cancel, isSpeaking } = useTTS();
   const state = location.state as { outgoing?: boolean; incoming?: boolean; peerName?: string; callType?: 'voice' | 'video' } | null;
-  const peerName = state?.peerName || 'Participant';
+  const [callContext, setCallContext] = useState(state);
+  const peerName = callContext?.peerName || 'Participant';
   const [muted, setMuted] = useState(false);
   const [cameraOff, setCameraOff] = useState(false);
   const [availableInputs, setAvailableInputs] = useState<MediaDeviceInfo[]>([]);
@@ -54,12 +55,25 @@ export function ActiveCallPage() {
   } = useSpeechRecognition(captionLanguage);
 
   useEffect(() => {
-    if (!id) return;
+    if (!id || callContext) return;
+    let mounted = true;
+    void api<{ call: { status: string; type: 'voice' | 'video'; direction: string; peer: { name: string } } }>(`/api/calls/${id}`)
+      .then(({ call }) => {
+        if (!mounted) return;
+        if (['ended','rejected','missed','busy'].includes(call.status)) { navigate('/calls'); return; }
+        setCallContext({ outgoing: call.direction === 'outgoing', incoming: call.direction === 'incoming', peerName: call.peer.name, callType: call.type });
+      })
+      .catch(() => { if (mounted) navigate('/calls'); });
+    return () => { mounted = false; };
+  }, [id, callContext, navigate]);
+
+  useEffect(() => {
+    if (!id || !callContext) return;
     let cancelled = false;
     const start = async () => {
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: true,
-        video: state?.callType !== 'voice'
+        video: callContext.callType !== 'voice'
       });
       if (cancelled) {
         stream.getTracks().forEach((track) => track.stop());
@@ -80,12 +94,12 @@ export function ActiveCallPage() {
       };
       // Do not send an SDP offer until the accepting participant has mounted
       // their media page. Offers sent while the incoming-call page is visible are lost.
-      if (state?.outgoing && remoteReady.current && !offerSent.current) {
+      if (callContext.outgoing && remoteReady.current && !offerSent.current) {
         offerSent.current = true;
         const offer = await pc.createOffer();
         await pc.setLocalDescription(offer);
         realtime.send({ type: 'call:signal', callId: id, signal: { sdp: offer } });
-      } else if (!state?.outgoing) {
+      } else if (!callContext.outgoing) {
         realtime.send({ type: 'call:action', callId: id, action: 'ready' });
       }
     };
@@ -106,7 +120,7 @@ export function ActiveCallPage() {
       localStream.current?.getTracks().forEach((track) => track.stop());
       peer.current?.close();
     };
-  }, [id, state?.outgoing, state?.callType]);
+  }, [id, callContext]);
 
   useEffect(() => {
     const unsubscribe = realtime.subscribe((payload) => {
@@ -140,7 +154,7 @@ export function ActiveCallPage() {
       }
       if (payload.type === 'call:action' && payload.callId === id) {
         const action = String(payload.action);
-        if (action === 'ready' && state?.outgoing && !offerSent.current) {
+        if (action === 'ready' && callContext?.outgoing && !offerSent.current) {
           remoteReady.current = true;
           if (peer.current) {
             offerSent.current = true;
@@ -162,7 +176,7 @@ export function ActiveCallPage() {
     return () => {
       unsubscribe();
     };
-  }, [cancel, id, navigate, segments, speak, user?.name, state?.outgoing]);
+  }, [cancel, id, navigate, segments, speak, user?.name, callContext?.outgoing]);
 
   useEffect(() => {
     if (captionsOn && supported) startListening();
@@ -272,7 +286,7 @@ export function ActiveCallPage() {
             {availableInputs.filter(device => device.kind === 'audioinput').map((device, index) => <option key={device.deviceId} value={device.deviceId}>{device.label || `Microphone ${index + 1}`}</option>)}
           </select>
         </label>
-        {state?.callType !== 'voice' && <label className="text-sm">Camera
+        {callContext?.callType !== 'voice' && <label className="text-sm">Camera
           <select aria-label="Camera selection" defaultValue="" className="block rounded bg-gray-800 text-white p-2" onChange={event => void switchDevice('video', event.target.value)}>
             <option value="" disabled>Select camera</option>
             {availableInputs.filter(device => device.kind === 'videoinput').map((device, index) => <option key={device.deviceId} value={device.deviceId}>{device.label || `Camera ${index + 1}`}</option>)}
@@ -366,7 +380,7 @@ export function ActiveCallPage() {
           </div>
           <span className="text-[10px]">{muted ? 'Muted' : 'Mute'}</span>
         </button>
-        {state?.callType !== 'voice' && <button type="button" onClick={() => { const next = !cameraOff; setCameraOff(next); setTrackEnabled(localStream.current, 'video', !next); }} aria-pressed={cameraOff} aria-label={cameraOff ? 'Turn camera on' : 'Turn camera off'} className="text-center">
+        {callContext?.callType !== 'voice' && <button type="button" onClick={() => { const next = !cameraOff; setCameraOff(next); setTrackEnabled(localStream.current, 'video', !next); }} aria-pressed={cameraOff} aria-label={cameraOff ? 'Turn camera on' : 'Turn camera off'} className="text-center">
           <div className="mx-auto w-12 h-12 rounded-full bg-white/10 flex items-center justify-center">{cameraOff ? <CameraOff /> : <Camera />}</div>
           <span className="text-[10px]">{cameraOff ? 'Camera off' : 'Camera on'}</span>
         </button>}

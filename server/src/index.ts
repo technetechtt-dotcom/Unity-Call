@@ -645,6 +645,14 @@ const server = createHttpServer(app, (req, socket) => {
   });
 });
 
+const cleanup = setInterval(() => {
+  try {
+    const removed = db.pruneExpired();
+    if (removed) console.log(JSON.stringify({ level: 'info', event: 'expired_record_cleanup', count: removed }));
+  } catch (error) { console.error('Retention cleanup failed', error); }
+}, 60 * 60 * 1000);
+cleanup.unref();
+
 server.listen(PORT, () => {
   console.log(`Unity Call API listening on http://localhost:${PORT}`);
 });

@@ -102,8 +102,8 @@ export function ChatThreadPage() {
   }, [id, recorder.audioBlob, recorder.isRecording]);
 
   const flushQueue = async () => {
-    if (!id || !navigator.onLine) return;
-    for (const item of peekQueue().filter((entry) => entry.conversationId === id)) {
+    if (!id || !user?.id || !navigator.onLine) return;
+    for (const item of peekQueue(user.id).filter((entry) => entry.conversationId === id)) {
       try {
         const sent = await api<{ message: ChatMessage }>(`/api/conversations/${id}/messages`, {
           method: 'POST',
@@ -144,7 +144,7 @@ export function ChatThreadPage() {
     setMessages((prev) => [...prev, optimistic]);
     setInputText('');
     if (!navigator.onLine) {
-      enqueueMessage({ clientId, conversationId: id, type: 'text', body: text, createdAt: optimistic.createdAt });
+      enqueueMessage({ userId: user?.id || '', clientId, conversationId: id, type: 'text', body: text, createdAt: optimistic.createdAt });
       return;
     }
     try {
@@ -155,6 +155,7 @@ export function ChatThreadPage() {
       });
       setMessages((prev) => prev.map((msg) => (msg.clientId === clientId ? sent.message : msg)));
     } catch {
+      enqueueMessage({ userId: user?.id || '', clientId, conversationId: id, type: 'text', body: text, createdAt: optimistic.createdAt });
       setMessages((prev) => prev.map((msg) => (msg.clientId === clientId ? { ...msg, status: 'failed' } : msg)));
     }
   };
@@ -187,8 +188,18 @@ export function ChatThreadPage() {
 
   const retry = async (message: ChatMessage) => {
     if (!id) return;
-    const sent = await api<{ message: ChatMessage }>(`/api/messages/${message.id}/retry`, { method: 'POST' });
-    setMessages((prev) => prev.map((item) => (item.id === message.id ? sent.message : item)));
+    try {
+      if (message.clientId) {
+        const sent = await api<{ message: ChatMessage }>(`/api/conversations/${id}/messages`, {
+          method: 'POST', body: JSON.stringify({ type: message.type, body: message.body, clientId: message.clientId })
+        });
+        removeQueued(message.clientId);
+        setMessages((prev) => prev.map((item) => (item.clientId === message.clientId ? sent.message : item)));
+      } else {
+        const sent = await api<{ message: ChatMessage }>(`/api/messages/${message.id}/retry`, { method: 'POST' });
+        setMessages((prev) => prev.map((item) => (item.id === message.id ? sent.message : item)));
+      }
+    } catch { setMessages(prev => prev.map(item => item.id === message.id ? { ...item, status: 'failed' } : item)); }
   };
 
   const startCall = async (type: 'voice' | 'video') => {

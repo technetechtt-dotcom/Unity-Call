@@ -24,6 +24,7 @@ export function ActiveCallPage() {
   const peerName = state?.peerName || 'Participant';
   const [muted, setMuted] = useState(false);
   const [captionsOn, setCaptionsOn] = useState(true);
+  const [captionLanguage, setCaptionLanguage] = useState(language);
   const [showHistory, setShowHistory] = useState(false);
   const [showSign, setShowSign] = useState(signLanguageEnabled);
   const [typed, setTyped] = useState('');
@@ -45,8 +46,9 @@ export function ActiveCallPage() {
     segments: spoken,
     startListening,
     stopListening,
-    supported
-  } = useSpeechRecognition(language);
+    supported,
+    error: captionError
+  } = useSpeechRecognition(captionLanguage);
 
   useEffect(() => {
     if (!id) return;
@@ -264,6 +266,11 @@ export function ActiveCallPage() {
               <History size={18} />
             </button>
           </div>
+          {captionError && <p role="alert" className="mb-3 text-yellow-300">{captionError}</p>}
+          <label htmlFor="caption-language" className="block text-sm mb-1">Speech caption language</label>
+          <select id="caption-language" value={captionLanguage} onChange={e => setCaptionLanguage(e.target.value as typeof language)} className="mb-3 p-2 rounded bg-white text-black">
+            {['English','Afrikaans','isiZulu','isiXhosa'].map(item => <option key={item} value={item}>{item}</option>)}
+          </select>
           {(showHistory ? segments : segments.slice(-4)).map((segment) => (
             <p key={segment.id} className="mb-2">
               <span className="text-xs opacity-70">{segment.speakerName} · {sourceLabel(segment.source)}</span>

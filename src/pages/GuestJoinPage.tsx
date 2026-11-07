@@ -62,6 +62,10 @@ export function GuestJoinPage() {
     localStream.current?.getTracks().forEach(track => track.stop());
   }, []);
 
+  useEffect(() => {
+    if (joined && localVideo.current && localStream.current) localVideo.current.srcObject = localStream.current;
+  }, [joined]);
+
   const send = (data: Record<string, unknown>) => {
     if (socket.current?.readyState === WebSocket.OPEN) socket.current.send(JSON.stringify(data));
   };

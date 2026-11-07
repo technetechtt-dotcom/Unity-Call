@@ -448,6 +448,15 @@ app.post('/api/calls/:id/:action', (req, res) => {
   json(res, 200, { call });
 });
 
+app.get('/api/calls/:id', (req, res) => {
+  const user = requireUser(req);
+  const call = db.getCall(req.params.id);
+  if (!call || (call.initiatorId !== user.id && call.calleeId !== user.id)) return json(res, 404, { error: 'Call not found.' });
+  const otherId = call.initiatorId === user.id ? call.calleeId : call.initiatorId;
+  const other = db.getUser(otherId);
+  json(res, 200, { call: { ...call, peer: { id: otherId, name: other?.name || 'Participant' }, direction: call.initiatorId === user.id ? 'outgoing' : 'incoming' } });
+});
+
 app.get('/api/calls/:id/transcript', (req, res) => {
   const user = requireUser(req);
   json(res, 200, { segments: db.listTranscript(req.params.id, user.id) });

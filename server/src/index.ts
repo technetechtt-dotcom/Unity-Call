@@ -154,6 +154,28 @@ app.get('/api/auth/me', (req, res) => {
   json(res, 200, { user: privateUser(user), preferences: db.getPreferences(user.id).payload });
 });
 
+app.get('/api/auth/sessions', (req, res) => {
+  const user = requireUser(req);
+  json(res, 200, { sessions: db.listSessions(user.id, tokenFrom(req)) });
+});
+
+app.delete('/api/auth/sessions/:id', (req, res) => {
+  const user = requireUser(req);
+  db.revokeSessionById(user.id, req.params.id);
+  json(res, 200, { ok: true });
+});
+
+app.post('/api/auth/logout-all', (req, res) => {
+  const user = requireUser(req);
+  db.revokeUserSessions(user.id);
+  json(res, 200, { ok: true });
+});
+
+app.get('/api/auth/export', (req, res) => {
+  const user = requireUser(req);
+  json(res, 200, { export: db.exportAccount(user.id) });
+});
+
 app.delete('/api/auth/account', (req, res) => {
   const user = requireUser(req);
   db.deleteAccount(user.id);
@@ -407,6 +429,13 @@ app.post('/api/interpreters/:id/book', (req, res) => {
   json(res, 200, { booking: db.bookInterpreter(user.id, req.params.id, String(req.body.startsAt), req.body.notes as string | undefined) });
 });
 
+app.patch('/api/bookings/:id', (req, res) => {
+  const user = requireUser(req);
+  const status = String(req.body.status);
+  if (!['accepted', 'declined', 'cancelled', 'completed'].includes(status)) return json(res, 400, { error: 'Invalid booking status.' });
+  json(res, 200, { booking: db.updateBooking(user.id, req.params.id, status as 'accepted' | 'declined' | 'cancelled' | 'completed') });
+});
+
 app.get('/api/bookings', (req, res) => {
   const user = requireUser(req);
   json(res, 200, { bookings: db.listBookings(user.id) });
@@ -415,6 +444,16 @@ app.get('/api/bookings', (req, res) => {
 app.get('/api/orgs', (req, res) => {
   requireUser(req);
   json(res, 200, { organizations: db.listOrganizations() });
+});
+
+app.get('/api/appointments', (req, res) => {
+  const user = requireUser(req);
+  json(res, 200, { appointments: db.listAppointments(user.id) });
+});
+
+app.post('/api/appointments/:id/cancel', (req, res) => {
+  const user = requireUser(req);
+  json(res, 200, { appointment: db.cancelAppointment(user.id, req.params.id) });
 });
 
 app.post('/api/orgs/:id/appointments', (req, res) => {

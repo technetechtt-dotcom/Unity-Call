@@ -33,7 +33,7 @@ export function SignLanguagePanel({ onClose, onSignDetected }: SignLanguagePanel
       <div className="p-2 flex justify-between items-center bg-black/70">
         <div className="flex items-center gap-1 text-xs font-bold">
           <Hand size={12} />
-          Limited SASL vocab
+          Manual SASL phrase selection
         </div>
         <button type="button" onClick={onClose} className="p-2" aria-label="Close sign panel">
           <X size={16} />

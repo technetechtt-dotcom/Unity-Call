@@ -33,7 +33,10 @@ export function IncomingCallPage() {
   const act = async (action: 'accept' | 'reject') => {
     if (!id) return;
     window.speechSynthesis.cancel();
-    await api(`/api/calls/${id}/${action}`, { method: 'POST' });
+    const saveTranscript = action === 'accept' && !!state?.call?.transcriptRequested
+      ? window.confirm('The caller requested to save a transcript. Allow Unity to save this call transcript? Live captions work even if you decline.')
+      : false;
+    await api(`/api/calls/${id}/${action}`, { method: 'POST', body: JSON.stringify({ saveTranscript }) });
     if (action === 'accept') navigate(`/calls/active/${id}`, { state: { incoming: true, peerName: callerName, callType: state?.call?.type } });
     else navigate('/chats');
   };

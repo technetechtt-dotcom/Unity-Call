@@ -37,7 +37,7 @@ export function upgradeWebSocket(req: IncomingMessage, socket: Duplex): MiniSock
     return null;
   }
   let connection: MiniSocket | null = null;
-  server.handleUpgrade(req, socket, Buffer.alloc(0), (ws) => {
+  server.handleUpgrade(req, socket as import('node:net').Socket, Buffer.alloc(0), (ws) => {
     connection = new MiniSocket(ws);
   });
   return connection;

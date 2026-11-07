@@ -989,6 +989,10 @@ export class Database {
   }
 
   createGuestLink(userId: string, purpose: string, targetId: string) {
+    if (!this.getUser(userId)) throw new Error('Account not found.');
+    if (purpose === 'call' && targetId !== userId) throw new Error('Call room must belong to its creator.');
+    if (purpose === 'org' && !this.store.organizations.some(org => org.id === targetId)) throw new Error('Organisation not found.');
+    if (!['call', 'org'].includes(purpose)) throw new Error('Unsupported guest invitation.');
     const link: GuestLink = {
       id: randomUUID(),
       token: randomBytes(12).toString('hex'),
@@ -1000,6 +1004,17 @@ export class Database {
     this.store.guestLinks.push(link);
     this.persist();
     return link;
+  }
+
+  listGuestLinks(userId: string) {
+    return this.store.guestLinks.filter(link => link.createdBy === userId && Date.parse(link.expiresAt) > Date.now());
+  }
+
+  revokeGuestLink(userId: string, linkId: string) {
+    const count = this.store.guestLinks.length;
+    this.store.guestLinks = this.store.guestLinks.filter(link => !(link.id === linkId && link.createdBy === userId));
+    if (this.store.guestLinks.length === count) throw new Error('Invitation not found.');
+    this.persist();
   }
 
   getGuestLink(token: string) {

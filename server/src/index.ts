@@ -319,20 +319,48 @@ app.post('/api/media', (req, res) => {
   const data = String(req.body.data || '');
   if (data.length > 14_000_000) return json(res, 413, { error: 'Maximum upload size is 10 MB.' });
   if (!data) return json(res, 400, { error: 'Choose a file to upload.' });
+  if (!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(data)) return json(res, 400, { error: 'Invalid encoded file.' });
   const buffer = Buffer.from(data, 'base64');
   if (buffer.length > 10 * 1024 * 1024) return json(res, 413, { error: 'Maximum upload size is 10 MB.' });
-  const allowedMime = new Set(['image/jpeg', 'image/png', 'image/webp', 'audio/webm', 'audio/ogg', 'audio/mpeg', 'audio/mp4', 'video/mp4', 'video/webm', 'application/pdf', 'text/plain']);
-  if (!allowedMime.has(String(req.body.mime))) return json(res, 415, { error: 'Unsupported media type.' });
-  const ext = String(req.body.filename || 'file.bin').split('.').pop()?.replace(/[^a-z0-9]/gi, '').slice(0, 10) || 'bin';
-  const filename = `${Date.now()}-${randomUUID()}.${ext}`;
+  const extensionByMime: Record<string, string> = {
+    'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp',
+    'audio/webm': 'webm', 'audio/ogg': 'ogg', 'audio/mpeg': 'mp3',
+    'audio/mp4': 'm4a', 'video/mp4': 'mp4', 'video/webm': 'webm',
+    'application/pdf': 'pdf', 'text/plain': 'txt'
+  };
+  const mime = String(req.body.mime || '');
+  if (!extensionByMime[mime]) return json(res, 415, { error: 'Unsupported media type.' });
+  const kind = String(req.body.kind || 'document');
+  if (!['audio','image','video','document','sign'].includes(kind) ||
+      (kind === 'image' && !mime.startsWith('image/')) ||
+      (kind === 'audio' && !mime.startsWith('audio/')) ||
+      (kind === 'video' && !mime.startsWith('video/')) ||
+      (kind === 'sign' && !mime.startsWith('video/')) ||
+      (kind === 'document' && !['application/pdf','text/plain'].includes(mime))) {
+    return json(res, 415, { error: 'Attachment type does not match its content type.' });
+  }
+  const hasPrefix = (prefix: number[]) => prefix.every((value, index) => buffer[index] === value);
+  const isIso = buffer.length > 12 && buffer.toString('ascii', 4, 8) === 'ftyp';
+  const magicValid =
+    (mime === 'image/jpeg' && hasPrefix([0xff, 0xd8, 0xff])) ||
+    (mime === 'image/png' && hasPrefix([137, 80, 78, 71, 13, 10, 26, 10])) ||
+    (mime === 'image/webp' && buffer.toString('ascii', 0, 4) === 'RIFF' && buffer.toString('ascii', 8, 12) === 'WEBP') ||
+    (mime === 'application/pdf' && buffer.toString('ascii', 0, 5) === '%PDF-') ||
+    (['audio/webm','video/webm'].includes(mime) && hasPrefix([0x1a, 0x45, 0xdf, 0xa3])) ||
+    (mime === 'audio/ogg' && buffer.toString('ascii', 0, 4) === 'OggS') ||
+    (mime === 'audio/mpeg' && (buffer.toString('ascii', 0, 3) === 'ID3' || (buffer[0] === 0xff && (buffer[1] & 0xe0) === 0xe0))) ||
+    (['audio/mp4','video/mp4'].includes(mime) && isIso) ||
+    (mime === 'text/plain' && !buffer.includes(0));
+  if (!magicValid) return json(res, 415, { error: 'File contents do not match the declared type.' });
+  db.assertMediaQuota(user.id, buffer.length);
+  const filename = `${Date.now()}-${randomUUID()}.${extensionByMime[mime]}`;
   const destPath = path.join(db.uploadRoot, filename);
   writeFileSync(destPath, buffer);
-  const kind = (req.body.kind as 'audio' | 'image' | 'video' | 'document' | 'sign') || 'document';
   const media = db.createMedia({
     ownerId: user.id,
-    kind,
+    kind: kind as 'audio' | 'image' | 'video' | 'document' | 'sign',
     path: destPath,
-    mime: String(req.body.mime || 'application/octet-stream'),
+    mime,
     size: buffer.length,
     originalId: req.body.originalId as string | undefined,
     altText: req.body.altText as string | undefined,
@@ -348,7 +376,7 @@ app.get('/api/media/:id', (req, res) => {
   const user = requireUser(req);
   const media = db.getMediaForUser(req.params.id, user.id);
   if (!media || !existsSync(media.path)) return json(res, 404, { error: 'File not found or you do not have access.' });
-  res.writeHead(200, { 'Content-Type': media.mime, 'Access-Control-Allow-Origin': '*' });
+  res.writeHead(200, { 'Content-Type': media.mime, 'Content-Disposition': media.kind === 'document' ? 'attachment' : 'inline', 'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'private, no-store' });
   createReadStream(media.path).pipe(res);
 });
 

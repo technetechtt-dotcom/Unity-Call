@@ -13,6 +13,8 @@ export class MiniSocket {
     socket.on('error', () => socket.terminate());
   }
   authToken?: string;
+  guestToken?: string;
+  guestRole?: 'host' | 'guest';
   get readyState() { return this.socket.readyState; }
   send(data: string) { if (this.readyState === this.OPEN) this.socket.send(data); }
   close() { this.socket.close(); }

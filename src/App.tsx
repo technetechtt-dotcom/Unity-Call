@@ -19,6 +19,7 @@ import { ProfilePage } from './pages/ProfilePage';
 import { PrivacyPage } from './pages/PrivacyPage';
 import { InterpretersPage } from './pages/InterpretersPage';
 import { OrganizationsPage } from './pages/OrganizationsPage';
+import { OrganisationAdminPage } from './pages/OrganisationAdminPage';
 import { GuestJoinPage } from './pages/GuestJoinPage';
 import { LegalPage } from './pages/LegalPage';
 import './i18n/config';
@@ -67,6 +68,7 @@ function AppRoutes() {
           <Route path="/settings/captions" element={<CaptionOverlayPage />} />
           <Route path="/interpreters" element={<InterpretersPage />} />
           <Route path="/orgs" element={<OrganizationsPage />} />
+          <Route path="/orgs/manage" element={<OrganisationAdminPage />} />
         </Route>
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

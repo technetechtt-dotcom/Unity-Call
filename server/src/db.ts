@@ -644,7 +644,8 @@ export class Database {
       calleeId: input.calleeId,
       type: input.type,
       status: 'ringing',
-      saveTranscript: input.saveTranscript,
+      saveTranscript: false,
+      transcriptRequested: input.saveTranscript,
       createdAt: now()
     };
     this.store.calls.push(call);
@@ -662,7 +663,7 @@ export class Database {
     }
   }
 
-  updateCall(id: string, userId: string, status: CallStatus) {
+  updateCall(id: string, userId: string, status: CallStatus, transcriptConsent = false) {
     const call = this.getCall(id);
     if (!call) throw new Error('Call not found.');
     this.assertCallParticipant(call, userId);
@@ -675,6 +676,7 @@ export class Database {
     if (status === 'reconnecting' && !['accepted', 'reconnecting'].includes(call.status)) throw new Error('Cannot reconnect this call.');
     if (status === 'ended' && !['ringing', 'accepted', 'reconnecting'].includes(call.status)) throw new Error('Cannot end this call.');
     call.status = status;
+    if (status === 'accepted') call.saveTranscript = Boolean(call.transcriptRequested && transcriptConsent);
     if (status === 'accepted' && !call.startedAt) call.startedAt = now();
     if (['rejected', 'busy', 'missed', 'ended'].includes(status)) {
       call.endedAt = now();

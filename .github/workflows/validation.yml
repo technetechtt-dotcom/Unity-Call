@@ -26,6 +26,9 @@ jobs:
       - name: HTTP security integration tests
         if: always()
         run: node --experimental-strip-types --test server/src/http.test.ts
+      - name: Guest room integration tests
+        if: always()
+        run: node --experimental-strip-types --test server/src/guest.test.ts
       - name: Isolated backend self-check
         if: always()
         run: npm test

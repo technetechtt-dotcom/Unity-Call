@@ -575,6 +575,15 @@ export class Database {
     this.persist();
   }
 
+  assertMediaQuota(userId: string, additionalBytes: number) {
+    if (!this.getUser(userId)) throw new Error('Account not found.');
+    const used = this.store.media.filter(m => m.ownerId === userId).reduce((total, m) => total + m.size, 0);
+    if (!Number.isSafeInteger(additionalBytes) || additionalBytes <= 0 || additionalBytes > 10 * 1024 * 1024)
+      throw Object.assign(new Error('File must be between 1 byte and 10 MB.'), { status: 413 });
+    if (used + additionalBytes > 250 * 1024 * 1024)
+      throw Object.assign(new Error('Storage quota exceeded (250 MB per account).'), { status: 413 });
+  }
+
   createMedia(input: {
     ownerId: string;
     kind: MediaKind;

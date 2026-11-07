@@ -381,7 +381,7 @@ app.post('/api/calls/:id/:action', (req, res) => {
     action === 'busy' ? 'busy' :
     action === 'missed' ? 'missed' :
     action === 'reconnect' ? 'reconnecting' : 'ended';
-  const call = db.updateCall(req.params.id, user.id, status);
+  const call = db.updateCall(req.params.id, user.id, status, req.body.saveTranscript === true);
   const otherId = call.initiatorId === user.id ? call.calleeId : call.initiatorId;
   sendTo(otherId, { type: 'call:state', call });
   sendTo(user.id, { type: 'call:state', call });

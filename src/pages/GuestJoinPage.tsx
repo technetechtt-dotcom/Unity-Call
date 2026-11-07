@@ -9,6 +9,7 @@ export function GuestJoinPage() {
   const { token } = useParams();
   const [status, setStatus] = useState('Checking invitation…');
   const [valid, setValid] = useState(false);
+  const [invitationId, setInvitationId] = useState('');
   const [joined, setJoined] = useState(false);
   const [role, setRole] = useState<'host' | 'guest'>();
   const [videoEnabled, setVideoEnabled] = useState(true);
@@ -29,11 +30,12 @@ export function GuestJoinPage() {
   useEffect(() => {
     if (!token) { setStatus('Invitation missing.'); return; }
     let mounted = true;
-    void api<{ link: { purpose: string; expiresAt: string } }>(`/api/guest/${encodeURIComponent(token)}`)
+    void api<{ link: { id: string; purpose: string; expiresAt: string } }>(`/api/guest/${encodeURIComponent(token)}`)
       .then(({ link }) => {
         if (!mounted) return;
         if (link.purpose !== 'call') { setStatus('This invitation is not a direct-call room.'); return; }
         setValid(true);
+        setInvitationId(link.id);
         setStatus('Valid invitation. Start the room, then share this link with the other participant. The creator must be signed in to host.');
       })
       .catch(error => { if (mounted) setStatus(error instanceof Error ? error.message : 'Invitation unavailable.'); });
@@ -180,6 +182,11 @@ export function GuestJoinPage() {
             <button type="button" className="underline min-h-[44px]" onClick={() => { const next = !muted; setMuted(next); localStream.current?.getAudioTracks().forEach(track => { track.enabled = !next; }); }}>{muted ? 'Unmute microphone' : 'Mute microphone'}</button>
             {videoEnabled && <button type="button" className="underline min-h-[44px]" onClick={() => { const next = !cameraOff; setCameraOff(next); localStream.current?.getVideoTracks().forEach(track => { track.enabled = !next; }); }}>{cameraOff ? 'Turn camera on' : 'Turn camera off'}</button>}
             <button type="button" className="p-3 rounded-lg bg-red-700 text-white" onClick={() => { stop(); setStatus('Call ended.'); }}>End guest call</button>
+            {role === 'host' && invitationId && <button type="button" className="underline min-h-[44px]" onClick={() => {
+              void api(`/api/guest-links/${invitationId}`, { method: 'DELETE' }).then(() => {
+                stop(); setValid(false); setStatus('Invitation revoked. This link can no longer be used.');
+              }).catch(error => setStatus(error instanceof Error ? error.message : 'Could not revoke invitation.'));
+            }}>Revoke invitation link</button>}
           </div>
           <section className="space-y-3" aria-label="Typed conversation">
             <h2 className="text-xl font-semibold">Typed replies</h2>

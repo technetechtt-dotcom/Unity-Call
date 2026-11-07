@@ -112,6 +112,7 @@ export interface CallRecord {
   type: CallType;
   status: CallStatus;
   saveTranscript: boolean;
+  transcriptRequested?: boolean;
   startedAt?: string;
   endedAt?: string;
   durationSeconds?: number;

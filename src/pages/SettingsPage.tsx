@@ -148,6 +148,7 @@ export function SettingsPage() {
         </Link>
         <Link className="block px-4 py-2 underline" to="/interpreters">SASL interpreters</Link>
         <Link className="block px-4 py-2 underline" to="/orgs">Organisation directory</Link>
+        <Link className="block px-4 py-2 underline" to="/orgs/manage">Manage my organisations</Link>
         <Link className="block px-4 py-2 underline" to="/legal/help">Help</Link>
         <Link className="block px-4 py-2 underline" to="/legal/privacy">Privacy information</Link>
         <Link className="block px-4 py-2 underline" to="/legal/terms">Terms</Link>

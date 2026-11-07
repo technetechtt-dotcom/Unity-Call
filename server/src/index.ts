@@ -49,11 +49,13 @@ const sockets = new Map<string, Set<SocketClient>>();
 
 function sendTo(userId: string, payload: unknown) {
   const set = sockets.get(userId);
-  if (!set) return;
+  if (!set) return false;
   const data = JSON.stringify(payload);
+  let delivered = false;
   for (const socket of set) {
-    if (socket.readyState === socket.OPEN) socket.send(data);
+    if (socket.readyState === socket.OPEN) { socket.send(data); delivered = true; }
   }
+  return delivered;
 }
 
 function tokenFrom(req: Req) {
@@ -79,7 +81,8 @@ app.get('/api/health', (_req, res) => {
   json(res, 200, { ok: true, service: 'unity-call', time: new Date().toISOString() });
 });
 
-app.get('/api/ice', (_req, res) => {
+app.get('/api/ice', (req, res) => {
+  requireUser(req);
   const ice: Array<Record<string, string | string[]>> = [
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' }
@@ -261,9 +264,11 @@ app.post('/api/conversations/:id/messages', (req, res) => {
   });
   const conversation = db.listConversations(user.id).find((item) => item.id === req.params.id);
   if (conversation?.peer) {
-    sendTo(conversation.peer.id, { type: 'message', message, conversationId: req.params.id });
-    db.updateMessageStatus(message.id, user.id, 'delivered');
-    sendTo(user.id, { type: 'message:status', messageId: message.id, status: 'delivered' });
+    const received = sendTo(conversation.peer.id, { type: 'message', message, conversationId: req.params.id });
+    if (received) {
+      db.updateMessageStatus(message.id, user.id, 'delivered');
+      sendTo(user.id, { type: 'message:status', messageId: message.id, status: 'delivered' });
+    }
   }
   json(res, 200, { message });
 });

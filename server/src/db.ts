@@ -953,6 +953,17 @@ export class Database {
     return link;
   }
 
+  pruneExpired() {
+    const time = Date.now();
+    const before = this.store.sessions.length + this.store.otpCodes.length + this.store.guestLinks.length;
+    this.store.sessions = this.store.sessions.filter(s => Date.parse(s.expiresAt) > time);
+    this.store.otpCodes = this.store.otpCodes.filter(o => Date.parse(o.expiresAt) > time && !o.consumedAt);
+    this.store.guestLinks = this.store.guestLinks.filter(g => Date.parse(g.expiresAt) > time);
+    const removed = before - this.store.sessions.length - this.store.otpCodes.length - this.store.guestLinks.length;
+    if (removed) this.persist();
+    return removed;
+  }
+
   setConsent(userId: string, purpose: string, granted: boolean) {
     const existing = this.store.consents.find((c) => c.userId === userId);
     if (existing) {

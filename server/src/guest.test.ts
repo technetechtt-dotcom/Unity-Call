@@ -69,6 +69,7 @@ test('guest invitation requires signed-in host and isolates a two-person relay',
   child.stdout?.on('data', chunk => { serverOutput += String(chunk); });
   child.stderr?.on('data', chunk => { serverOutput += String(chunk); });
   const clients: WebSocket[] = [];
+  let phase = 'startup';
   try {
     try { await waitForServer(base); }
     catch (error) { throw new Error(`Guest test server failed to start: ${serverOutput || String(error)}`); }
@@ -92,30 +93,35 @@ test('guest invitation requires signed-in host and isolates a two-person relay',
     const host = await openSocket(`ws://127.0.0.1:${port}/ws`, base, cookie);
     const guest = await openSocket(`ws://127.0.0.1:${port}/ws`, base);
     clients.push(host, guest);
+    phase = 'host joins';
     const joinedHost = expectEvent(host, 'guest:joined');
     host.send(JSON.stringify({ type: 'guest:join', token: roomToken }));
     assert.equal((await joinedHost).role, 'host');
+    phase = 'guest joins';
     const readyHost = expectEvent(host, 'guest:peer-ready');
     const readyGuest = expectEvent(guest, 'guest:peer-ready');
     const joinedGuest = expectEvent(guest, 'guest:joined');
     guest.send(JSON.stringify({ type: 'guest:join', token: roomToken }));
     assert.equal((await joinedGuest).role, 'guest');
     await Promise.all([readyHost, readyGuest]);
+    phase = 'message relay';
     const received = expectEvent(guest, 'guest:text');
     host.send(JSON.stringify({ type: 'guest:text', text: 'Accessible reply' }));
     assert.equal((await received).text, 'Accessible reply');
+    phase = 'third participant rejected';
     const third = await openSocket(`ws://127.0.0.1:${port}/ws`, base);
     clients.push(third);
     const error = expectEvent(third, 'guest:error');
     third.send(JSON.stringify({ type: 'guest:join', token: roomToken }));
     assert.match(String((await error).error), /already has a participant/);
+    phase = 'invalid invitation rejected';
     const bad = await openSocket(`ws://127.0.0.1:${port}/ws`, base);
     clients.push(bad);
     const invalid = expectEvent(bad, 'guest:error');
     bad.send(JSON.stringify({ type: 'guest:join', token: 'invalid-token' }));
     assert.match(String((await invalid).error), /invalid or expired/);
   } catch (error) {
-    throw new Error(`${error instanceof Error ? error.message : String(error)}; server log: ${serverOutput.slice(-3500)}`);
+    throw new Error(`${phase}: ${error instanceof Error ? error.message : String(error)}; server log: ${serverOutput.slice(-3500)}`);
   } finally {
     for (const client of clients) client.terminate();
     child.kill('SIGTERM');

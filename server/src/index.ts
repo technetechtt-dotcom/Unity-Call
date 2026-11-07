@@ -46,6 +46,7 @@ mkdirSync(db.uploadRoot, { recursive: true });
 
 type SocketClient = MiniSocket;
 const sockets = new Map<string, Set<SocketClient>>();
+const guestRooms = new Map<string, { host?: SocketClient; guest?: SocketClient }>();
 
 function sendTo(userId: string, payload: unknown) {
   const set = sockets.get(userId);
@@ -590,6 +591,14 @@ app.post('/api/guest-links', (req, res) => {
   json(res, 200, { link, url: `/join/${link.token}` });
 });
 
+app.get('/api/guest/:token/ice', (req, res) => {
+  const link = db.getGuestLink(req.params.token);
+  if (!link || link.purpose !== 'call') return json(res, 404, { error: 'Guest call invitation not found.' });
+  const ice: Array<Record<string, string | string[]>> = [{ urls: 'stun:stun.l.google.com:19302' }];
+  if (process.env.TURN_URLS) ice.push({ urls: process.env.TURN_URLS.split(','), username: process.env.TURN_USERNAME || '', credential: process.env.TURN_PASSWORD || '' });
+  json(res, 200, { iceServers: ice });
+});
+
 app.get('/api/guest/:token', (req, res) => {
   const link = db.getGuestLink(req.params.token);
   if (!link) return json(res, 404, { error: 'This invitation has expired.' });
@@ -653,6 +662,48 @@ const server = createHttpServer(app, (req, socket) => {
     } catch {
       return;
     }
+    if (payload.type === 'guest:join') {
+      const token = String(payload.token || '');
+      const link = token.length >= 20 && token.length <= 128 ? db.getGuestLink(token) : undefined;
+      if (!link || link.purpose !== 'call' || client.guestToken || client.userId) {
+        client.send(JSON.stringify({ type: 'guest:error', error: 'This guest call invitation is invalid or expired.' }));
+        return;
+      }
+      const sessionUser = db.getSessionUser(tokenFrom(req));
+      const role: 'host' | 'guest' = sessionUser?.id === link.createdBy ? 'host' : 'guest';
+      const room = guestRooms.get(token) || {};
+      if (room[role]?.readyState === room[role]?.OPEN) {
+        client.send(JSON.stringify({ type: 'guest:error', error: 'This room already has a participant in that role.' }));
+        return;
+      }
+      room[role] = client;
+      client.guestToken = token;
+      client.guestRole = role;
+      guestRooms.set(token, room);
+      client.send(JSON.stringify({ type: 'guest:joined', role }));
+      if (room.host && room.guest) {
+        room.host.send(JSON.stringify({ type: 'guest:peer-ready' }));
+        room.guest.send(JSON.stringify({ type: 'guest:peer-ready' }));
+      }
+      return;
+    }
+    if (client.guestToken && client.guestRole) {
+      const link = db.getGuestLink(client.guestToken);
+      const room = guestRooms.get(client.guestToken);
+      if (!link || link.purpose !== 'call' || !room || room[client.guestRole] !== client) {
+        client.close();
+        return;
+      }
+      const other = client.guestRole === 'host' ? room.guest : room.host;
+      if (payload.type === 'guest:signal' && payload.signal && typeof payload.signal === 'object' &&
+          JSON.stringify(payload.signal).length <= 16000) {
+        other?.send(JSON.stringify({ type: 'guest:signal', signal: payload.signal }));
+      }
+      if (payload.type === 'guest:text' && typeof payload.text === 'string' && payload.text.length <= 1500) {
+        other?.send(JSON.stringify({ type: 'guest:text', text: payload.text }));
+      }
+      return;
+    }
     if (payload.type === 'auth') {
       const clientToken = tokenFrom(req) || String(payload.token || '');
       const user = db.getSessionUser(clientToken);
@@ -707,6 +758,15 @@ const server = createHttpServer(app, (req, socket) => {
   });
   client.on('close', () => {
     if (client.userId) sockets.get(client.userId)?.delete(client);
+    if (client.guestToken && client.guestRole) {
+      const room = guestRooms.get(client.guestToken);
+      if (room && room[client.guestRole] === client) {
+        delete room[client.guestRole];
+        const other = client.guestRole === 'host' ? room.guest : room.host;
+        other?.send(JSON.stringify({ type: 'guest:peer-left' }));
+        if (!room.host && !room.guest) guestRooms.delete(client.guestToken);
+      }
+    }
   });
 });
 

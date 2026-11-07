@@ -85,7 +85,7 @@ export function useSpeechRecognition(lang = 'en-US') {
         };
 
         setRecognition(recognitionInstance);
-        return () => { recognitionInstance.onresult = null; recognitionInstance.onerror = null; recognitionInstance.onend = null; recognitionInstance.abort(); };
+        return () => { recognitionInstance.onresult = null; recognitionInstance.onerror = null; recognitionInstance.onend = null; recognitionInstance.stop(); };
       }
       setSupported(false);
       setError('Speech recognition is not supported in this browser. Typed replies remain available.');

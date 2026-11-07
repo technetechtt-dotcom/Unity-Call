@@ -299,7 +299,7 @@ export function ChatThreadPage() {
             <input
               type="file"
               className="sr-only"
-              accept="image/*,video/*,audio/*,.pdf,.txt,.doc,.docx"
+              accept="image/jpeg,image/png,image/webp,video/mp4,video/webm,audio/webm,audio/ogg,audio/mpeg,audio/mp4,.pdf,.txt"
               aria-label="Attach a photo, video, or document"
               onChange={(event) => {
                 const file = event.target.files?.[0];

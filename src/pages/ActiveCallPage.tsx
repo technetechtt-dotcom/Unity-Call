@@ -38,6 +38,8 @@ export function ActiveCallPage() {
   const localStream = useRef<MediaStream | null>(null);
   const peer = useRef<RTCPeerConnection | null>(null);
   const pendingCandidates = useRef<RTCIceCandidateInit[]>([]);
+  const remoteReady = useRef(false);
+  const offerSent = useRef(false);
   const {
     interimTranscript,
     segments: spoken,
@@ -70,10 +72,15 @@ export function ActiveCallPage() {
           realtime.send({ type: 'call:signal', callId: id, signal: { candidate: event.candidate } });
         }
       };
-      if (state?.outgoing) {
+      // Do not send an SDP offer until the accepting participant has mounted
+      // their media page. Offers sent while the incoming-call page is visible are lost.
+      if (state?.outgoing && remoteReady.current && !offerSent.current) {
+        offerSent.current = true;
         const offer = await pc.createOffer();
         await pc.setLocalDescription(offer);
         realtime.send({ type: 'call:signal', callId: id, signal: { sdp: offer } });
+      } else if (!state?.outgoing) {
+        realtime.send({ type: 'call:action', callId: id, action: 'ready' });
       }
     };
     void start().catch(() => {
@@ -127,6 +134,16 @@ export function ActiveCallPage() {
       }
       if (payload.type === 'call:action' && payload.callId === id) {
         const action = String(payload.action);
+        if (action === 'ready' && state?.outgoing && !offerSent.current) {
+          remoteReady.current = true;
+          if (peer.current) {
+            offerSent.current = true;
+            void peer.current.createOffer().then(async offer => {
+              await peer.current?.setLocalDescription(offer);
+              realtime.send({ type: 'call:signal', callId: id, signal: { sdp: offer } });
+            }).catch(() => { offerSent.current = false; setQuality('connection-error'); });
+          }
+        }
         if (action === 'repeat') speak(segments[segments.length - 1]?.text || 'Nothing to repeat yet');
         if (action === 'slow') speak('Please speak more slowly.');
         if (action === 'spell') speak(String(payload.value || user?.name || '').split('').join(' '));
@@ -139,7 +156,7 @@ export function ActiveCallPage() {
     return () => {
       unsubscribe();
     };
-  }, [cancel, id, navigate, segments, speak, user?.name]);
+  }, [cancel, id, navigate, segments, speak, user?.name, state?.outgoing]);
 
   useEffect(() => {
     if (captionsOn && supported) startListening();

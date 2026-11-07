@@ -29,6 +29,21 @@ const message = db.createMessage({
   body: 'Hello Bob'
 });
 assert(message.body === 'Hello Bob', 'message body should persist');
+let deniedReceipt = false;
+try { db.acknowledgeMessage(message.id, alice.id); } catch { deniedReceipt = true; }
+assert(deniedReceipt, 'sender may not acknowledge own delivery');
+const receipt = db.acknowledgeMessage(message.id, bob.id);
+assert(receipt.status === 'delivered', 'recipient receipt marks message delivered');
+let deniedStatus = false;
+try { db.updateMessageStatus(message.id, bob.id, 'sent'); } catch { deniedStatus = true; }
+assert(deniedStatus, 'recipient may not override sender message status');
+const deleted = db.deleteMessage(message.id, alice.id);
+assert(deleted.body === undefined && deleted.type === 'system', 'deleted message content must be removed');
+const paged = Array.from({ length: 3 }, (_, index) => db.createMessage({ conversationId: conversation.id, senderId: alice.id, type: 'text', body: `Page ${index}` }));
+const first = db.listMessages(conversation.id, alice.id, undefined, 2);
+assert(first.length === 2 && first[1].id === paged[2].id, 'page size limits records');
+const previous = db.listMessages(conversation.id, alice.id, undefined, 2, first[0].id);
+assert(previous.length > 0 && previous.every(item => item.id !== first[0].id), 'pagination cursor excludes current page');
 
 let isolated = false;
 try {

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 
 export interface SpeechSegment {
   id: string;
@@ -8,7 +8,7 @@ export interface SpeechSegment {
   isFinal: boolean;
 }
 
-export function useSpeechRecognition(lang: string = 'en-US') {
+export function useSpeechRecognition(lang = 'en-US') {
   const [isListening, setIsListening] = useState(false);
   const [transcript, setTranscript] = useState('');
   const [interimTranscript, setInterimTranscript] = useState('');
@@ -33,9 +33,8 @@ export function useSpeechRecognition(lang: string = 'en-US') {
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      // @ts-ignore
-      const SpeechRecognition =
-      window.SpeechRecognition || window.webkitSpeechRecognition;
+      const speechWindow = window as Window & { SpeechRecognition?: new () => any; webkitSpeechRecognition?: new () => any };
+      const SpeechRecognition = speechWindow.SpeechRecognition || speechWindow.webkitSpeechRecognition;
       if (SpeechRecognition) {
         setSupported(true);
         const recognitionInstance = new SpeechRecognition();

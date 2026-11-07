@@ -20,7 +20,7 @@ export function ActiveCallPage() {
   const { user } = useAuth();
   const { highContrast, fontSize, setFontSize, language, captionOverlayOpacity, signLanguageEnabled, signAvatarEnabled, ttsEnabled } = useAccessibility();
   const { speak, cancel, isSpeaking } = useTTS();
-  const state = location.state as { outgoing?: boolean; incoming?: boolean; peerName?: string } | null;
+  const state = location.state as { outgoing?: boolean; incoming?: boolean; peerName?: string; callType?: 'voice' | 'video' } | null;
   const peerName = state?.peerName || 'Participant';
   const [muted, setMuted] = useState(false);
   const [captionsOn, setCaptionsOn] = useState(true);
@@ -37,6 +37,7 @@ export function ActiveCallPage() {
   const remoteVideo = useRef<HTMLVideoElement>(null);
   const localStream = useRef<MediaStream | null>(null);
   const peer = useRef<RTCPeerConnection | null>(null);
+  const pendingCandidates = useRef<RTCIceCandidateInit[]>([]);
   const {
     interimTranscript,
     segments: spoken,
@@ -51,7 +52,7 @@ export function ActiveCallPage() {
     const start = async () => {
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: true,
-        video: true
+        video: state?.callType !== 'voice'
       });
       if (cancelled) {
         stream.getTracks().forEach((track) => track.stop());
@@ -92,7 +93,7 @@ export function ActiveCallPage() {
       localStream.current?.getTracks().forEach((track) => track.stop());
       peer.current?.close();
     };
-  }, [id, state?.outgoing]);
+  }, [id, state?.outgoing, state?.callType]);
 
   useEffect(() => {
     const unsubscribe = realtime.subscribe((payload) => {
@@ -102,13 +103,17 @@ export function ActiveCallPage() {
           if (!peer.current) return;
           if (signal.sdp) {
             await peer.current.setRemoteDescription(signal.sdp);
+            for (const candidate of pendingCandidates.current.splice(0)) await peer.current.addIceCandidate(candidate);
             if (signal.sdp.type === 'offer') {
               const answer = await peer.current.createAnswer();
               await peer.current.setLocalDescription(answer);
               realtime.send({ type: 'call:signal', callId: id, signal: { sdp: answer } });
             }
           }
-          if (signal.candidate) await peer.current.addIceCandidate(signal.candidate);
+          if (signal.candidate) {
+            if (peer.current.remoteDescription) await peer.current.addIceCandidate(signal.candidate);
+            else pendingCandidates.current.push(signal.candidate);
+          }
         })();
       }
       if (payload.type === 'call:caption' && payload.callId === id) {
@@ -237,7 +242,7 @@ export function ActiveCallPage() {
           aria-live="polite"
         >
           <div className="flex justify-between mb-3">
-            <span>{supported ? 'Live captions from each speaker' : 'Captions unavailable in this browser'}</span>
+            <span>{supported ? 'Live captions from each speaker' : 'Speech-to-text is unavailable in this browser; typed replies still work.'}</span>
             <button type="button" onClick={() => setShowHistory((value) => !value)} aria-pressed={showHistory} aria-label="Show caption history">
               <History size={18} />
             </button>

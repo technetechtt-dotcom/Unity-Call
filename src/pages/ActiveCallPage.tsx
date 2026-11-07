@@ -81,7 +81,7 @@ export function ActiveCallPage() {
       }
       localStream.current = stream;
       if (localVideo.current) localVideo.current.srcObject = stream;
-      void navigator.mediaDevices.enumerateDevices().then(devices => setAvailableInputs(devices.filter(device => device.kind === 'audioinput' || device.kind === 'videoinput'))).catch(() => {});
+      void navigator.mediaDevices.enumerateDevices().then(devices => setAvailableInputs(devices.filter(device => device.kind === 'audioinput' || device.kind === 'videoinput'))).catch(() => { setDeviceError('Unable to list available input devices.'); });
       const pc = await createPeerConnection((remote) => {
         if (remoteVideo.current) remoteVideo.current.srcObject = remote;
       });

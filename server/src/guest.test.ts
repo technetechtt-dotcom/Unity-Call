@@ -41,6 +41,12 @@ function expectEvent(socket: WebSocket, type: string, timeout = 3000) {
     const timer = setTimeout(() => { socket.off('message', handler); reject(new Error('Timed out waiting for ' + type)); }, timeout);
     const handler = (data: WebSocket.RawData) => {
       const event = JSON.parse(data.toString()) as Record<string, unknown>;
+      if (event.type !== type && (event.type === 'guest:error' || event.type === 'error')) {
+        clearTimeout(timer);
+        socket.off('message', handler);
+        reject(new Error(String(event.error || JSON.stringify(event))));
+        return;
+      }
       if (event.type !== type) return;
       clearTimeout(timer);
       socket.off('message', handler);
@@ -108,6 +114,8 @@ test('guest invitation requires signed-in host and isolates a two-person relay',
     const invalid = expectEvent(bad, 'guest:error');
     bad.send(JSON.stringify({ type: 'guest:join', token: 'invalid-token' }));
     assert.match(String((await invalid).error), /invalid or expired/);
+  } catch (error) {
+    throw new Error(`${error instanceof Error ? error.message : String(error)}; server log: ${serverOutput.slice(-3500)}`);
   } finally {
     for (const client of clients) client.terminate();
     child.kill('SIGTERM');

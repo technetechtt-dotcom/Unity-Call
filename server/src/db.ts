@@ -22,6 +22,7 @@ import {
   type CallStatus,
   type CommPref,
   type Contact,
+  type GuestLink,
   type Interpreter,
   type MediaFile,
   type MediaKind,
@@ -246,6 +247,8 @@ export class Database {
   deleteAccount(userId: string) {
     const user = this.getUser(userId);
     if (!user) return;
+    const previousEmail = user.email;
+    const previousPhone = user.phone;
     user.deletedAt = now();
     user.email = undefined;
     user.phone = undefined;
@@ -272,7 +275,7 @@ export class Database {
     this.store.appointments = this.store.appointments.filter((a) => a.userId !== userId);
     this.store.guestLinks = this.store.guestLinks.filter((g) => g.createdBy !== userId);
     this.store.consents = this.store.consents.filter((c) => c.userId !== userId);
-    this.store.otpCodes = this.store.otpCodes.filter((o) => o.destination !== user.email && o.destination !== user.phone);
+    this.store.otpCodes = this.store.otpCodes.filter((o) => o.destination !== previousEmail && o.destination !== previousPhone);
     this.persist();
   }
 

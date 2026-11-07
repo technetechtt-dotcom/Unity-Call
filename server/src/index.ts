@@ -441,6 +441,52 @@ app.get('/api/bookings', (req, res) => {
   json(res, 200, { bookings: db.listBookings(user.id) });
 });
 
+app.post('/api/orgs', (req, res) => {
+  const user = requireUser(req);
+  json(res, 201, { organization: db.createOrganization(user.id, String(req.body.name || ''), String(req.body.kind || 'other'), String(req.body.description || '')) });
+});
+
+app.get('/api/orgs/mine', (req, res) => {
+  const user = requireUser(req);
+  json(res, 200, { organizations: db.listManagedOrganizations(user.id) });
+});
+
+app.post('/api/orgs/:id/desks', (req, res) => {
+  const user = requireUser(req);
+  json(res, 201, { desk: db.createDesk(user.id, req.params.id, String(req.body.name || '')) });
+});
+
+app.post('/api/orgs/:id/members', (req, res) => {
+  const user = requireUser(req);
+  const role = String(req.body.role);
+  if (!['staff','viewer'].includes(role)) return json(res, 400, { error: 'Invalid role.' });
+  json(res, 201, { member: db.addOrgMember(user.id, req.params.id, String(req.body.userId || ''), role as 'staff' | 'viewer') });
+});
+
+app.get('/api/orgs/:id/appointments', (req, res) => {
+  const user = requireUser(req);
+  json(res, 200, { appointments: db.listOrgAppointments(user.id, req.params.id) });
+});
+
+app.patch('/api/orgs/:id/appointments/:appointmentId', (req, res) => {
+  const user = requireUser(req);
+  const status = String(req.body.status);
+  if (!['completed', 'cancelled'].includes(status)) return json(res, 400, { error: 'Invalid appointment status.' });
+  json(res, 200, { appointment: db.updateOrgAppointment(user.id, req.params.id, req.params.appointmentId, status as 'completed' | 'cancelled') });
+});
+
+app.get('/api/desks/:id/queue', (req, res) => {
+  const user = requireUser(req);
+  json(res, 200, { queue: db.listQueue(user.id, req.params.id) });
+});
+
+app.patch('/api/desks/:id/queue/:itemId', (req, res) => {
+  const user = requireUser(req);
+  const status = String(req.body.status);
+  if (!['active', 'done'].includes(status)) return json(res, 400, { error: 'Invalid queue status.' });
+  json(res, 200, { item: db.updateQueueItem(user.id, req.params.id, req.params.itemId, status as 'active' | 'done') });
+});
+
 app.get('/api/orgs', (req, res) => {
   requireUser(req);
   json(res, 200, { organizations: db.listOrganizations() });

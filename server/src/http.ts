@@ -109,6 +109,17 @@ export function createHttpServer(app: ReturnType<typeof createApp>, onUpgrade?: 
     });
     try {
       guardTraffic(req);
+      if (['POST', 'PATCH', 'PUT', 'DELETE'].includes(req.method || '')) {
+        if (req.headers['sec-fetch-site'] === 'cross-site') throw Object.assign(new Error('Cross-site request blocked.'), { status: 403 });
+        if (req.headers.origin) {
+          let allowed = false;
+          try {
+            const origin = String(req.headers.origin);
+            allowed = process.env.APP_ORIGIN ? origin === process.env.APP_ORIGIN : new URL(origin).host === req.headers.host;
+          } catch { allowed = false; }
+          if (!allowed) throw Object.assign(new Error('Origin not allowed.'), { status: 403 });
+        }
+      }
       const matched = app.match(req);
       if (!matched) { json(res, 404, { error: 'Not found.' }); return; }
       const body = req.method === 'GET' ? {} : await readBody(req);

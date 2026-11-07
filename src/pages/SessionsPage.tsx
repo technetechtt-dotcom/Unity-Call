@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from '../lib/router';
-import { api, setToken } from '../lib/api';
+import { api, clearLegacyToken } from '../lib/api';
 import { Button } from '../components/ui/Button';
 
 type Session = { id: string; userAgent?: string; createdAt: string; expiresAt: string; current: boolean };
@@ -18,7 +18,7 @@ export function SessionsPage() {
     setError(''); setMessage('');
     try {
       await api(`/api/auth/sessions/${id}`, { method: 'DELETE' });
-      if (current) { setToken(null); navigate('/login', { replace: true }); return; }
+      if (current) { clearLegacyToken(); window.location.assign('/login'); return; }
       await load();
       setMessage('Session signed out.');
     } catch (e) { setError(e instanceof Error ? e.message : 'Could not end session.'); }
@@ -27,8 +27,8 @@ export function SessionsPage() {
     if (!window.confirm('Sign out on all devices, including this one?')) return;
     try {
       await api('/api/auth/logout-all', { method: 'POST' });
-      setToken(null);
-      navigate('/login', { replace: true });
+      clearLegacyToken();
+      window.location.assign('/login');
     } catch (e) { setError(e instanceof Error ? e.message : 'Could not sign out devices.'); }
   };
   const exportData = async () => {

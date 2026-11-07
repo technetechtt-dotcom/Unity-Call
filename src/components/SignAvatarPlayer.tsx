@@ -18,14 +18,14 @@ export function SignAvatarPlayer({ text, isActive, size = 'compact' }: SignAvata
   return (
     <aside
       className={`rounded-2xl p-3 ${size === 'compact' ? 'w-40' : 'w-full'} bg-indigo-950 text-white`}
-      aria-label="Experimental sign avatar"
+      aria-label="Experimental sign vocabulary text display"
     >
-      <p className="text-[11px] uppercase tracking-wide opacity-70">Validated signs only</p>
+      <p className="text-[11px] uppercase tracking-wide opacity-70">Manual vocabulary text display; not an animated sign avatar</p>
       {isActive && playable ? (
         <p className="font-bold mt-2">{words.join(' · ')}</p>
       ) : (
         <p className="text-sm mt-2">
-          Avatar idle. Unity only plays linguistically validated items: {VALIDATED_SIGNS.join(', ')}.
+          No sign animation is available. Listed vocabulary: {VALIDATED_SIGNS.join(', ')}.
         </p>
       )}
     </aside>

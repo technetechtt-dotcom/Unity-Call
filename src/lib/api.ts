@@ -1,12 +1,7 @@
-const TOKEN_KEY = 'unity_token';
-
-export function getToken() {
-  return localStorage.getItem(TOKEN_KEY);
-}
-
-export function setToken(token: string | null) {
-  if (token) localStorage.setItem(TOKEN_KEY, token);
-  else localStorage.removeItem(TOKEN_KEY);
+// Session credentials are stored in HTTP-only cookies, never localStorage.
+// Remove credentials from older versions of Unity Call on migration.
+export function clearLegacyToken() {
+  localStorage.removeItem('unity_token');
 }
 
 export async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
@@ -14,9 +9,7 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
   if (!(options.body instanceof FormData) && !headers.has('Content-Type')) {
     headers.set('Content-Type', 'application/json');
   }
-  const token = getToken();
-  if (token) headers.set('Authorization', `Bearer ${token}`);
-  const response = await fetch(path, { ...options, headers });
+  const response = await fetch(path, { ...options, headers, credentials: 'same-origin' });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
     throw new Error(data.error || 'Something went wrong. Try again.');
@@ -25,9 +18,7 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
 }
 
 export function mediaUrl(path: string) {
-  const token = getToken();
-  if (!token) return path;
-  return `${path}${path.includes('?') ? '&' : '?'}access=1`;
+  return path;
 }
 
 export async function fileToBase64(file: Blob) {
@@ -59,10 +50,7 @@ export async function uploadMedia(
 }
 
 export async function fetchMediaBlob(path: string) {
-  const token = getToken();
-  const response = await fetch(path, {
-    headers: token ? { Authorization: `Bearer ${token}` } : undefined
-  });
+  const response = await fetch(path, { credentials: 'same-origin' });
   if (!response.ok) throw new Error('Could not load that file.');
   return response.blob();
 }

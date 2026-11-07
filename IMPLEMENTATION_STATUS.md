@@ -22,14 +22,26 @@ Updated: 2026-11-07. Source-code changes committed directly to `main`. This docu
 - [x] CI with frontend/backend type-checking, lint, isolated backend self-check, HTTP security integration tests and production build.
 - [x] README corrected to avoid claiming PostgreSQL or guest media calling are operational.
 
+## Additional development implemented on 2026-11-07
+
+- [x] Delivery acknowledgements are now accepted only from the actual receiving participant; sender status manipulation is prevented.
+- [x] Sender-authorised message deletion removes message content for all conversation participants, with realtime update events.
+- [x] Optional cursor pagination for conversation messages with bounded page size and API validation.
+- [x] Stronger call lifecycle transitions, unanswered-call expiry and realtime missed-call notifications.
+- [x] Camera enable/disable and microphone/camera input selection, where browsers expose devices.
+- [x] Authenticated call lookup for direct navigation or page refresh.
+- [x] Guest browser WebRTC room with two scoped roles, invitation validity checks, signalling relay and typed responses; still requires real network/media validation.
+- [x] Guest invitation listing and owner-only revocation; direct call room ownership validation and reduced public invitation details.
+- [x] Additional HTTP and guest WebSocket integration tests; these verify signalling/authorization but not physical-device media.
+
 ## Further software engineering — no supplier account required, but NOT completed
 
 - [ ] Refactor synchronous JSON datastore to a transactional PostgreSQL implementation; add versioned migrations, migration tests, recovery/restore tests and a safe cutover tool.
 - [ ] Add refresh-token rotation or shorter session expiry/renewal, optional MFA, suspicious-login detection, persistent/distributed rate limits and role-change audit events.
-- [ ] Complete real guest call joining with scoped capabilities, revocable invitations and WebRTC media negotiation.
-- [ ] Add robust calling reconnection, missed call expiry and timeout, device selection, call quality recovery, and full multi-device integration tests.
+- [ ] Validate and harden newly implemented browser guest calls across real devices, including reconnection, TURN and complete guest accessibility; integrate into ordinary call history.
+- [ ] Add robust calling reconnection, speaker/Bluetooth selection, call quality recovery and full real-device integration tests; missed-call timeout and input selection are implemented.
 - [ ] Add per-route schema validation, pagination, background job worker, service-level metrics and complete API tests.
-- [ ] Add message/media deletion/retention workflows; consistent message delivery/receipt acknowledgements; accessible media previews, progress and recovery.
+- [ ] Complete media deletion/retention and accessible previews/progress/recovery; message deletion and basic receiver receipts have been implemented, but comprehensive delivery-state testing remains.
 - [ ] Add interpreter credential review/admin tools, availability calendar, reminders, cancellation/booking confirmations and integrated interpretation calls.
 - [ ] Add organisational reporting, staff invitations via accessible discovery, scheduling conflicts, availability slots and complete queue management.
 - [ ] Build group messaging with participant administration and appropriate permissions; group and three-way calling require a separate WebRTC design.
@@ -50,4 +62,4 @@ Updated: 2026-11-07. Source-code changes committed directly to `main`. This docu
 
 ## Launch decision
 
-**Not ready for real user data or a public production launch.** CI success verifies build and narrow automated tests only. In particular, storage remains a local JSON file; guest media calls, automatic SASL recognition, production push notification delivery, and full accessibility validation remain incomplete. Consult `PRODUCTION_GATES.md` before staging or a competition demonstration.
+**Not ready for real user data or a public production launch.** CI success verifies build and narrow automated tests only. In particular, storage remains a local JSON file; guest media calls need real-device validation, automatic SASL recognition, production push notification delivery, and full accessibility validation remain incomplete. Consult `PRODUCTION_GATES.md` before staging or a competition demonstration.

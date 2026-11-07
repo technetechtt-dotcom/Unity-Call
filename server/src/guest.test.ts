@@ -57,11 +57,15 @@ test('guest invitation requires signed-in host and isolates a two-person relay',
   const child = spawn(process.execPath, ['--experimental-strip-types', 'server/src/index.ts'], {
     cwd: process.cwd(),
     env: { ...process.env, NODE_ENV: 'development', PORT: String(port), DATA_DIR: directory },
-    stdio: 'ignore'
+    stdio: ['ignore', 'pipe', 'pipe']
   });
+  let serverOutput = '';
+  child.stdout?.on('data', chunk => { serverOutput += String(chunk); });
+  child.stderr?.on('data', chunk => { serverOutput += String(chunk); });
   const clients: WebSocket[] = [];
   try {
-    await waitForServer(base);
+    try { await waitForServer(base); }
+    catch (error) { throw new Error(`Guest test server failed to start: ${serverOutput || String(error)}`); }
     const post = async (url: string, body: unknown, cookie?: string) => {
       const reply = await fetch(base + url, {
         method: 'POST',

@@ -173,6 +173,12 @@ export interface Organization {
   createdAt: string;
 }
 
+export interface OrgMember {
+  orgId: string;
+  userId: string;
+  role: 'admin' | 'staff' | 'viewer';
+}
+
 export interface ServiceDesk {
   id: string;
   orgId: string;
@@ -231,6 +237,7 @@ export interface StoreData {
   interpreters: Interpreter[];
   bookings: Booking[];
   organizations: Organization[];
+  orgMembers: OrgMember[];
   desks: ServiceDesk[];
   queues: QueueItem[];
   appointments: Appointment[];
@@ -256,6 +263,7 @@ export function emptyStore(): StoreData {
     interpreters: [],
     bookings: [],
     organizations: [],
+    orgMembers: [],
     desks: [],
     queues: [],
     appointments: [],

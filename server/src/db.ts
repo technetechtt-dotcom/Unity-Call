@@ -665,8 +665,16 @@ export class Database {
     const call = this.getCall(id);
     if (!call) throw new Error('Call not found.');
     this.assertCallParticipant(call, userId);
+    if (this.isBlocked(call.initiatorId, call.calleeId)) throw new Error('This call is blocked.');
+    const terminal = ['ended', 'rejected', 'busy', 'missed'];
+    if (terminal.includes(call.status)) throw new Error('This call has ended.');
+    if (status === 'accepted' && (call.status !== 'ringing' || userId !== call.calleeId)) throw new Error('Only the recipient may accept a ringing call.');
+    if (status === 'rejected' && (call.status !== 'ringing' || userId !== call.calleeId)) throw new Error('Only the recipient may reject a ringing call.');
+    if (status === 'missed' && call.status !== 'ringing') throw new Error('Only a ringing call can be missed.');
+    if (status === 'reconnecting' && !['accepted', 'reconnecting'].includes(call.status)) throw new Error('Cannot reconnect this call.');
+    if (status === 'ended' && !['ringing', 'accepted', 'reconnecting'].includes(call.status)) throw new Error('Cannot end this call.');
     call.status = status;
-    if (status === 'accepted') call.startedAt = now();
+    if (status === 'accepted' && !call.startedAt) call.startedAt = now();
     if (['rejected', 'busy', 'missed', 'ended'].includes(status)) {
       call.endedAt = now();
       if (call.startedAt) {

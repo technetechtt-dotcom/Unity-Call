@@ -81,6 +81,7 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
         const message = payload.message as ChatMessage;
         setLastMessage(message);
         if (message.senderId !== user?.id) {
+          realtime.send({ type: 'message:received', messageId: message.id });
           addToast(`${message.senderName}: ${message.body || message.type}`, 'info');
           if (vibrationEnabled) vibrate(80);
         }

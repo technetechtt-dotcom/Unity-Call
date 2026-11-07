@@ -328,7 +328,7 @@ app.post('/api/media', (req, res) => {
     'audio/mp4': 'm4a', 'video/mp4': 'mp4', 'video/webm': 'webm',
     'application/pdf': 'pdf', 'text/plain': 'txt'
   };
-  const mime = String(req.body.mime || '');
+  const mime = String(req.body.mime || '').split(';')[0].trim().toLowerCase();
   if (!extensionByMime[mime]) return json(res, 415, { error: 'Unsupported media type.' });
   const kind = String(req.body.kind || 'document');
   if (!['audio','image','video','document','sign'].includes(kind) ||

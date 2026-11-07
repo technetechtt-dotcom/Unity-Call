@@ -149,8 +149,8 @@ export function ActiveCallPage() {
         if (action === 'spell') speak(String(payload.value || user?.name || '').split('').join(' '));
       }
       if (payload.type === 'call:state') {
-        const call = payload.call as { status: string };
-        if (['ended', 'rejected', 'missed', 'busy'].includes(call.status)) navigate('/calls');
+        const call = payload.call as { id: string; status: string };
+        if (call.id === id && ['ended', 'rejected', 'missed', 'busy'].includes(call.status)) navigate('/calls');
       }
     });
     return () => {

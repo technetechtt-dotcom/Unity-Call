@@ -1,4 +1,3 @@
-import { getToken } from './api';
 
 type Handler = (payload: Record<string, unknown>) => void;
 
@@ -7,25 +6,29 @@ class RealtimeClient {
   private handlers = new Set<Handler>();
   private retries = 0;
   private opened = false;
+  private enabled = false;
 
   connect() {
-    const token = getToken();
-    if (!token || this.opened) return;
+    this.enabled = true;
+    if (this.opened) return;
     const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
     this.socket = new WebSocket(`${protocol}://${window.location.host}/ws`);
     this.opened = true;
     this.socket.onopen = () => {
       this.retries = 0;
-      this.socket?.send(JSON.stringify({ type: 'auth', token }));
+      this.socket?.send(JSON.stringify({ type: 'auth' }));
     };
     this.socket.onmessage = (event) => {
-      const payload = JSON.parse(event.data);
-      this.handlers.forEach((handler) => handler(payload));
+      try {
+        const payload = JSON.parse(event.data);
+        if (payload.type === 'error' && payload.error === 'Invalid session.') { this.disconnect(); return; }
+        this.handlers.forEach((handler) => handler(payload));
+      } catch { /* Ignore malformed server events. */ }
     };
     this.socket.onclose = () => {
       this.opened = false;
       this.socket = undefined;
-      if (!getToken()) return;
+      if (!this.enabled) return;
       const delay = Math.min(8000, 500 * 2 ** this.retries);
       this.retries += 1;
       window.setTimeout(() => this.connect(), delay);
@@ -33,6 +36,7 @@ class RealtimeClient {
   }
 
   disconnect() {
+    this.enabled = false;
     this.opened = false;
     this.socket?.close();
     this.socket = undefined;

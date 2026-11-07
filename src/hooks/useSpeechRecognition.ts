@@ -14,6 +14,7 @@ export function useSpeechRecognition(lang = 'en-US') {
   const [interimTranscript, setInterimTranscript] = useState('');
   const [segments, setSegments] = useState<SpeechSegment[]>([]);
   const [supported, setSupported] = useState(false);
+  const [error, setError] = useState('');
   const [recognition, setRecognition] = useState<any>(null);
 
   // Map our app languages to BCP 47 tags
@@ -79,11 +80,15 @@ export function useSpeechRecognition(lang = 'en-US') {
 
         recognitionInstance.onerror = (event: any) => {
           console.error('Speech recognition error', event.error);
+          setError(`Speech recognition unavailable: ${String(event.error)}. You can still type a reply.`);
           setIsListening(false);
         };
 
         setRecognition(recognitionInstance);
+        return () => { recognitionInstance.onresult = null; recognitionInstance.onerror = null; recognitionInstance.onend = null; recognitionInstance.abort(); };
       }
+      setSupported(false);
+      setError('Speech recognition is not supported in this browser. Typed replies remain available.');
     }
   }, [lang]);
 
@@ -97,9 +102,11 @@ export function useSpeechRecognition(lang = 'en-US') {
   const startListening = useCallback(() => {
     if (recognition && !isListening) {
       try {
+        setError('');
         recognition.start();
         setIsListening(true);
       } catch (e) {
+        setError('Unable to start speech recognition. Check your microphone permission.');
         console.error('Speech recognition failed to start', e);
       }
     }
@@ -126,6 +133,7 @@ export function useSpeechRecognition(lang = 'en-US') {
     startListening,
     stopListening,
     resetTranscript,
-    supported
+    supported,
+    error
   };
 }

@@ -712,6 +712,8 @@ export class Database {
     if (terminal.includes(call.status)) throw new Error('This call has ended.');
     if (status === 'accepted' && (call.status !== 'ringing' || userId !== call.calleeId)) throw new Error('Only the recipient may accept a ringing call.');
     if (status === 'rejected' && (call.status !== 'ringing' || userId !== call.calleeId)) throw new Error('Only the recipient may reject a ringing call.');
+    if (status === 'busy' && (call.status !== 'ringing' || userId !== call.calleeId)) throw new Error('Only the recipient may mark a ringing call busy.');
+    if (status === 'missed' && userId !== call.initiatorId) throw new Error('Only the caller may mark a call missed.');
     if (status === 'missed' && call.status !== 'ringing') throw new Error('Only a ringing call can be missed.');
     if (status === 'reconnecting' && !['accepted', 'reconnecting'].includes(call.status)) throw new Error('Cannot reconnect this call.');
     if (status === 'ended' && !['ringing', 'accepted', 'reconnecting'].includes(call.status)) throw new Error('Cannot end this call.');
@@ -729,6 +731,19 @@ export class Database {
     }
     this.persist();
     return call;
+  }
+
+  expireRingingCalls(timeoutMs = 60_000) {
+    const expired: CallRecord[] = [];
+    const time = Date.now();
+    for (const call of this.store.calls) {
+      if (call.status !== 'ringing' || time - Date.parse(call.createdAt) < timeoutMs) continue;
+      call.status = 'missed';
+      call.endedAt = now();
+      expired.push(call);
+    }
+    if (expired.length) this.persist();
+    return expired;
   }
 
   listCalls(userId: string) {

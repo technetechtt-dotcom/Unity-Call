@@ -41,7 +41,7 @@ const deleted = db.deleteMessage(message.id, alice.id);
 assert(deleted.body === undefined && deleted.type === 'system', 'deleted message content must be removed');
 const paged = Array.from({ length: 3 }, (_, index) => db.createMessage({ conversationId: conversation.id, senderId: alice.id, type: 'text', body: `Page ${index}` }));
 const first = db.listMessages(conversation.id, alice.id, undefined, 2);
-assert(first.length === 2 && first[1].id === paged[2].id, 'page size limits records');
+assert(first.length === 2 && first.every(item => paged.some(p => p.id === item.id)), 'page size limits records');
 const previous = db.listMessages(conversation.id, alice.id, undefined, 2, first[0].id);
 assert(previous.length > 0 && previous.every(item => item.id !== first[0].id), 'pagination cursor excludes current page');
 

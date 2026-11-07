@@ -20,6 +20,8 @@ jobs:
       - name: Lint
         run: npm run lint
       - name: Isolated backend self-check
+        if: always()
         run: npm test
       - name: Build
+        if: always()
         run: npm run build

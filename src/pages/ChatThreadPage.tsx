@@ -204,7 +204,7 @@ export function ChatThreadPage() {
         saveTranscript
       })
     });
-    navigate(`/calls/active/${data.call.id}`, { state: { outgoing: true, peerName: conversation.peer.name } });
+    navigate(`/calls/active/${data.call.id}`, { state: { outgoing: true, peerName: conversation.peer.name, callType: type } });
   };
 
   const visible = useMemo(

@@ -12,6 +12,7 @@ import { NewChatPage } from './pages/NewChatPage';
 import { IncomingCallPage } from './pages/IncomingCallPage';
 import { ActiveCallPage } from './pages/ActiveCallPage';
 import { SettingsPage } from './pages/SettingsPage';
+import { SessionsPage } from './pages/SessionsPage';
 import { CaptionOverlayPage } from './pages/CaptionOverlayPage';
 import { CallHistoryPage } from './pages/CallHistoryPage';
 import { ProfilePage } from './pages/ProfilePage';
@@ -61,6 +62,7 @@ function AppRoutes() {
           <Route path="/calls/active/:id" element={<ActiveCallPage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/settings/profile" element={<ProfilePage />} />
+          <Route path="/settings/sessions" element={<SessionsPage />} />
           <Route path="/settings/privacy" element={<PrivacyPage />} />
           <Route path="/settings/captions" element={<CaptionOverlayPage />} />
           <Route path="/interpreters" element={<InterpretersPage />} />

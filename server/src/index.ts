@@ -293,14 +293,21 @@ app.post('/api/conversations/:id/read', (req, res) => {
 
 app.post('/api/conversations/:id/messages', (req, res) => {
   const user = requireUser(req);
+  const type = req.body.type || 'text';
+  if (!['text', 'voice', 'image', 'video', 'document', 'sign'].includes(String(type)) || typeof req.body.body !== 'string' && !req.body.mediaId) {
+    return json(res, 400, { error: 'Invalid message type or content.' });
+  }
+  if (typeof req.body.body === 'string' && req.body.body.length > 10000) return json(res, 413, { error: 'Message too long.' });
+  if (req.body.clientId !== undefined && (typeof req.body.clientId !== 'string' || req.body.clientId.length > 120)) return json(res, 400, { error: 'Invalid message identifier.' });
+  if (type !== 'text' && typeof req.body.mediaId !== 'string') return json(res, 400, { error: 'Attachment is required.' });
   const message = db.createMessage({
     conversationId: req.params.id,
     senderId: user.id,
-    type: (req.body.type as 'text') || 'text',
+    type: type as 'text' | 'voice' | 'image' | 'video' | 'document' | 'sign',
     body: req.body.body as string | undefined,
     mediaId: req.body.mediaId as string | undefined,
     clientId: req.body.clientId as string | undefined,
-    source: req.body.source as 'original' | undefined
+    source: 'original'
   });
   const conversation = db.listConversations(user.id).find((item) => item.id === req.params.id);
   if (conversation?.peer) {
@@ -407,6 +414,8 @@ app.get('/api/calls', (req, res) => {
 
 app.post('/api/calls', (req, res) => {
   const user = requireUser(req);
+  if (!['voice', 'video'].includes(String(req.body.type || 'voice')) || typeof req.body.userId !== 'string') return json(res, 400, { error: 'Invalid call request.' });
+  if (req.body.saveTranscript !== undefined && typeof req.body.saveTranscript !== 'boolean') return json(res, 400, { error: 'Invalid transcript consent option.' });
   try {
     const call = db.createCall({
       initiatorId: user.id,
@@ -446,11 +455,12 @@ app.get('/api/calls/:id/transcript', (req, res) => {
 
 app.post('/api/calls/:id/transcript', (req, res) => {
   const user = requireUser(req);
+  if (typeof req.body.text !== 'string' || !req.body.text.trim() || req.body.text.length > 2000 || !['speech','typed','sign','correction'].includes(String(req.body.source))) return json(res, 400, { error: 'Invalid caption content.' });
   const segment = db.addTranscript({
     callId: req.params.id,
     userId: user.id,
     speakerId: user.id,
-    speakerName: String(req.body.speakerName || user.name),
+    speakerName: user.name,
     text: String(req.body.text || ''),
     source: req.body.source as 'speech'
   });
@@ -565,7 +575,9 @@ app.post('/api/desks/:id/queue', (req, res) => {
 
 app.post('/api/guest-links', (req, res) => {
   const user = requireUser(req);
-  const link = db.createGuestLink(user.id, String(req.body.purpose || 'call'), String(req.body.targetId || user.id));
+  const purpose = String(req.body.purpose || 'call');
+  if (!['call','org'].includes(purpose) || typeof req.body.targetId !== 'string') return json(res, 400, { error: 'Invalid invitation request.' });
+  const link = db.createGuestLink(user.id, purpose, req.body.targetId);
   json(res, 200, { link, url: `/join/${link.token}` });
 });
 

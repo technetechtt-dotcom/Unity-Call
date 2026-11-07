@@ -16,6 +16,7 @@ interface ChatBubbleProps {
   source?: ChatMessage['source'];
   media?: ChatMessage['media'];
   onRetry?: () => void;
+  onDelete?: () => void;
 }
 
 export function ChatBubble({
@@ -27,7 +28,8 @@ export function ChatBubble({
   status,
   source = 'original',
   media,
-  onRetry
+  onRetry,
+  onDelete
 }: ChatBubbleProps) {
   const { highContrast } = useAccessibility();
   const { speak } = useTTS();
@@ -129,7 +131,7 @@ export function ChatBubble({
                 <figcaption className="text-xs mt-1">{media.altText || 'No description yet.'}</figcaption>
               </figure>
             )}
-            <p className="whitespace-pre-wrap leading-relaxed">{message}</p>
+            <p className="whitespace-pre-wrap leading-relaxed">{message === 'system' ? 'Message deleted' : message}</p>
           </div>
         )}
         <div className="flex items-center justify-between mt-2 text-xs opacity-80 gap-3">
@@ -143,6 +145,7 @@ export function ChatBubble({
                 <Volume2 size={14} />
               </button>
             )}
+            {onDelete && <button type="button" onClick={onDelete} className="underline" aria-label="Delete message for everyone">Delete</button>}
             {status === 'failed' && onRetry && (
               <button type="button" onClick={onRetry} className="underline">
                 Retry

@@ -26,7 +26,9 @@ export function upgradeWebSocket(req: IncomingMessage, socket: Duplex): MiniSock
   const origin = req.headers.origin;
   const allowedOrigin = process.env.APP_ORIGIN;
   // Browsers send Origin, so fail closed for unapproved cross-origin requests.
-  if (!origin || (allowedOrigin ? origin !== allowedOrigin : new URL(origin).host !== req.headers.host)) {
+  let originAllowed = false;
+  try { originAllowed = !!origin && (allowedOrigin ? origin === allowedOrigin : new URL(origin).host === req.headers.host); } catch { originAllowed = false; }
+  if (!originAllowed) {
     socket.destroy();
     return null;
   }

@@ -58,10 +58,20 @@ function sendTo(userId: string, payload: unknown) {
   return delivered;
 }
 
-function tokenFrom(req: Req) {
+function tokenFrom(req: { headers: Req['headers'] }) {
+  const cookie = String(req.headers.cookie || '').split(';').map(value => value.trim()).find(value => value.startsWith('unity_session='));
+  if (cookie) return cookie.slice('unity_session='.length);
+  // Legacy bearer sessions remain accepted during the migration.
   const header = req.headers.authorization;
   if (header?.startsWith('Bearer ')) return header.slice(7);
   return undefined;
+}
+
+function setSessionCookie(res: import('node:http').ServerResponse, token?: string) {
+  const secure = DEV ? '' : '; Secure';
+  res.setHeader('Set-Cookie', token
+    ? `unity_session=${token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=2592000${secure}`
+    : `unity_session=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0${secure}`);
 }
 
 function requireUser(req: Req) {
@@ -139,13 +149,15 @@ app.post('/api/auth/otp/verify', (req, res) => {
   }
   if (!user) return json(res, 404, { error: 'Account not found.' });
   const { token } = db.createSession(user.id, req.headers['user-agent']);
-  json(res, 200, { token, user: privateUser(user), preferences: db.getPreferences(user.id).payload });
+  setSessionCookie(res, token);
+  json(res, 200, { user: privateUser(user), preferences: db.getPreferences(user.id).payload });
 });
 
 app.post('/api/auth/logout', (req, res) => {
   requireUser(req);
   const token = tokenFrom(req);
   if (token) db.revokeSession(token);
+  setSessionCookie(res);
   json(res, 200, { ok: true });
 });
 
@@ -168,6 +180,7 @@ app.delete('/api/auth/sessions/:id', (req, res) => {
 app.post('/api/auth/logout-all', (req, res) => {
   const user = requireUser(req);
   db.revokeUserSessions(user.id);
+  setSessionCookie(res);
   json(res, 200, { ok: true });
 });
 
@@ -179,6 +192,7 @@ app.get('/api/auth/export', (req, res) => {
 app.delete('/api/auth/account', (req, res) => {
   const user = requireUser(req);
   db.deleteAccount(user.id);
+  setSessionCookie(res);
   json(res, 200, { ok: true });
 });
 
@@ -582,13 +596,14 @@ const server = createHttpServer(app, (req, socket) => {
       return;
     }
     if (payload.type === 'auth') {
-      const user = db.getSessionUser(String(payload.token || ''));
+      const clientToken = tokenFrom(req) || String(payload.token || '');
+      const user = db.getSessionUser(clientToken);
       if (!user) {
         client.send(JSON.stringify({ type: 'error', error: 'Invalid session.' }));
         return;
       }
       client.userId = user.id;
-      client.authToken = String(payload.token);
+      client.authToken = clientToken;
       if (!sockets.has(user.id)) sockets.set(user.id, new Set());
       sockets.get(user.id)!.add(client);
       client.send(JSON.stringify({ type: 'ready', userId: user.id }));

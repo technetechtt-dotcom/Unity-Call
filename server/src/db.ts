@@ -1,5 +1,5 @@
 import { createHash, randomBytes, randomInt, randomUUID, scryptSync, timingSafeEqual } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync, unlinkSync } from 'node:fs';
 import path from 'node:path';
 
 function hashSecret(value: string) {
@@ -219,6 +219,25 @@ export class Database {
     this.persist();
   }
 
+  listSessions(userId: string, currentToken?: string) {
+    return this.store.sessions.filter((s) => s.userId === userId && Date.parse(s.expiresAt) > Date.now()).map((s) => ({ id: s.id, userAgent: s.userAgent, createdAt: s.createdAt, expiresAt: s.expiresAt, current: !!currentToken && s.tokenHash === hashToken(currentToken) }));
+  }
+
+  revokeSessionById(userId: string, sessionId: string) {
+    const count = this.store.sessions.length;
+    this.store.sessions = this.store.sessions.filter((s) => !(s.userId === userId && s.id === sessionId));
+    if (this.store.sessions.length === count) throw new Error('Session not found.');
+    this.persist();
+  }
+
+  exportAccount(userId: string) {
+    const user = this.getUser(userId);
+    if (!user) throw new Error('Account not found.');
+    const ownConversations = new Set(this.store.members.filter((m) => m.userId === userId).map((m) => m.conversationId));
+    const ownCalls = new Set(this.store.calls.filter((c) => c.initiatorId === userId || c.calleeId === userId).map((c) => c.id));
+    return { exportedAt: now(), user, preferences: this.getPreferences(userId).payload, contacts: this.listContacts(userId), messages: this.store.messages.filter((m) => ownConversations.has(m.conversationId)), calls: this.listCalls(userId), transcripts: this.store.transcripts.filter((t) => ownCalls.has(t.callId)), media: this.store.media.filter((m) => m.ownerId === userId).map(({ path: _path, ...m }) => m), bookings: this.listBookings(userId), appointments: this.store.appointments.filter((a) => a.userId === userId), consents: this.store.consents.filter((c) => c.userId === userId) };
+  }
+
   revokeUserSessions(userId: string) {
     this.store.sessions = this.store.sessions.filter((s) => s.userId !== userId);
     this.persist();
@@ -233,7 +252,27 @@ export class Database {
     user.name = 'Deleted account';
     this.revokeUserSessions(userId);
     this.store.preferences = this.store.preferences.filter((p) => p.userId !== userId);
+    for (const media of this.store.media.filter((m) => m.ownerId === userId)) {
+      try { if (existsSync(media.path)) unlinkSync(media.path); } catch (error) { console.error('Media removal failed', media.id, error); }
+    }
+    const removedConversations = new Set(this.store.members.filter((m) => m.userId === userId).map((m) => m.conversationId));
+    const removedCalls = new Set(this.store.calls.filter((c) => c.initiatorId === userId || c.calleeId === userId).map((c) => c.id));
     this.store.media = this.store.media.filter((m) => m.ownerId !== userId);
+    this.store.messages = this.store.messages.filter((m) => m.senderId !== userId && !removedConversations.has(m.conversationId));
+    this.store.members = this.store.members.filter((m) => !removedConversations.has(m.conversationId));
+    this.store.conversations = this.store.conversations.filter((c) => !removedConversations.has(c.id));
+    this.store.calls = this.store.calls.filter((c) => !removedCalls.has(c.id));
+    this.store.transcripts = this.store.transcripts.filter((t) => !removedCalls.has(t.callId) && t.speakerId !== userId);
+    this.store.contacts = this.store.contacts.filter((c) => c.ownerId !== userId && c.contactUserId !== userId);
+    this.store.blocks = this.store.blocks.filter((b) => b.blockerId !== userId && b.blockedId !== userId);
+    this.store.reports = this.store.reports.filter((r) => r.reporterId !== userId && r.targetUserId !== userId);
+    this.store.interpreters = this.store.interpreters.filter((i) => i.userId !== userId);
+    this.store.bookings = this.store.bookings.filter((b) => b.requesterId !== userId);
+    this.store.queues = this.store.queues.filter((q) => q.visitorId !== userId);
+    this.store.appointments = this.store.appointments.filter((a) => a.userId !== userId);
+    this.store.guestLinks = this.store.guestLinks.filter((g) => g.createdBy !== userId);
+    this.store.consents = this.store.consents.filter((c) => c.userId !== userId);
+    this.store.otpCodes = this.store.otpCodes.filter((o) => o.destination !== user.email && o.destination !== user.phone);
     this.persist();
   }
 
@@ -482,6 +521,8 @@ export class Database {
     source?: MessageSource;
   }) {
     this.assertMember(input.conversationId, input.senderId);
+    if (input.mediaId && !this.store.media.some((m) => m.id === input.mediaId && m.ownerId === input.senderId)) throw new Error('Attachment not found or not owned by sender.');
+    if (input.body && input.body.length > 10000) throw new Error('Message too long.');
     const members = this.store.members.filter((m) => m.conversationId === input.conversationId);
     const other = members.find((m) => m.userId !== input.senderId);
     if (other && this.isBlocked(input.senderId, other.userId)) {
@@ -569,7 +610,7 @@ export class Database {
 
   updateMedia(id: string, userId: string, patch: Partial<Pick<MediaFile, 'altText' | 'transcript' | 'captions'>>) {
     const media = this.getMediaForUser(id, userId);
-    if (!media) throw new Error('File not found.');
+    if (!media || media.ownerId !== userId) throw new Error('File not found or not owned by you.');
     Object.assign(media, patch);
     this.persist();
     return media;
@@ -718,7 +759,9 @@ export class Database {
 
   bookInterpreter(requesterId: string, interpreterId: string, startsAt: string, notes?: string) {
     const interpreter = this.store.interpreters.find((i) => i.id === interpreterId);
-    if (!interpreter) throw new Error('Interpreter not found.');
+    if (!interpreter || !interpreter.qualified || !interpreter.available) throw new Error('Interpreter is not verified or available.');
+    if (!Number.isFinite(Date.parse(startsAt)) || Date.parse(startsAt) <= Date.now()) throw new Error('Choose a future appointment.');
+    if (this.store.bookings.some((b) => b.interpreterId === interpreterId && ['requested', 'accepted'].includes(b.status) && Math.abs(Date.parse(b.startsAt) - Date.parse(startsAt)) < 60 * 60 * 1000)) throw new Error('Interpreter already has a request in this time slot.');
     const booking: Booking = {
       id: randomUUID(),
       interpreterId,
@@ -730,6 +773,20 @@ export class Database {
       createdAt: now()
     };
     this.store.bookings.push(booking);
+    this.persist();
+    return booking;
+  }
+
+  updateBooking(userId: string, bookingId: string, status: Booking['status']) {
+    const booking = this.store.bookings.find((b) => b.id === bookingId);
+    if (!booking) throw new Error('Booking not found.');
+    const interpreter = this.store.interpreters.find((i) => i.id === booking.interpreterId);
+    const isInterpreter = interpreter?.userId === userId;
+    if (!isInterpreter && booking.requesterId !== userId) throw new Error('Booking not found.');
+    if (status === 'cancelled') {
+      if (booking.requesterId !== userId || !['requested','accepted'].includes(booking.status)) throw new Error('Cannot cancel this booking.');
+    } else if (!isInterpreter || !({ accepted: ['requested'], declined: ['requested'], completed: ['accepted'] } as Record<string, string[]>)[status]?.includes(booking.status)) throw new Error('Invalid booking state transition.');
+    booking.status = status;
     this.persist();
     return booking;
   }
@@ -767,9 +824,19 @@ export class Database {
     return item;
   }
 
+  listAppointments(userId: string) { return this.store.appointments.filter((a) => a.userId === userId); }
+
+  cancelAppointment(userId: string, id: string) {
+    const appointment = this.store.appointments.find((a) => a.id === id && a.userId === userId);
+    if (!appointment || appointment.status !== 'booked') throw new Error('Booking not found.');
+    appointment.status = 'cancelled'; this.persist(); return appointment;
+  }
+
   createAppointment(userId: string, orgId: string, startsAt: string) {
     const org = this.store.organizations.find((o) => o.id === orgId);
     if (!org) throw new Error('Organisation not found.');
+    if (!Number.isFinite(Date.parse(startsAt)) || Date.parse(startsAt) <= Date.now()) throw new Error('Choose a future appointment.');
+    if (this.store.appointments.some((a) => a.orgId === orgId && a.userId === userId && a.status === 'booked' && Math.abs(Date.parse(a.startsAt) - Date.parse(startsAt)) < 30 * 60 * 1000)) throw new Error('You already booked this time slot.');
     const appointment: Appointment = {
       id: randomUUID(),
       orgId,

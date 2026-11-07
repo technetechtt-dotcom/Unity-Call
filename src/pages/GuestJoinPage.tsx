@@ -10,7 +10,7 @@ export function GuestJoinPage() {
     if (!token) return;
     void api<{ link: { purpose: string; expiresAt: string } }>(`/api/guest/${token}`)
       .then((data) => {
-        setStatus(`Guest invitation for ${data.link.purpose}. This page works in a browser with no Unity install. Camera and microphone are requested only if you join media.`);
+        setStatus(`Guest invitation for ${data.link.purpose}. The invitation is valid, but browser guest calling is not yet available. Please create a Unity Call account to use calling or messaging.`);
       })
       .catch((error) => setStatus(error instanceof Error ? error.message : 'Invitation unavailable.'));
   }, [token]);

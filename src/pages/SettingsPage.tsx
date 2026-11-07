@@ -73,6 +73,7 @@ export function SettingsPage() {
           </div>
           <Link className="block py-2 underline" to="/settings/profile">{t('profile.title')}</Link>
           <Link className="block py-2 underline" to="/settings/privacy">Privacy controls</Link>
+          <Link className="block py-2 underline" to="/settings/sessions">Devices and download my data</Link>
           <button
             type="button"
             className="w-full py-2 text-red-600 flex items-center justify-center gap-2"

@@ -1,4 +1,4 @@
-import { createHash, randomBytes, randomUUID, scryptSync, timingSafeEqual } from 'node:crypto';
+import { createHash, randomBytes, randomInt, randomUUID, scryptSync, timingSafeEqual } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
@@ -107,7 +107,7 @@ export class Database {
     if (recent.length >= 5) {
       throw new Error('Too many codes requested. Wait before trying again.');
     }
-    const code = String(Math.floor(100000 + Math.random() * 900000));
+    const code = String(randomInt(100000, 1000000));
     const record = {
       id: randomUUID(),
       destination: destination.trim().toLowerCase(),
@@ -373,6 +373,10 @@ export class Database {
   }
 
   getOrCreateConversation(a: string, b: string) {
+    if (!a || !b || a === b || !this.getUser(a) || !this.getUser(b)) throw new Error('Invalid conversation participants.');
+    if (this.isBlocked(a, b)) throw new Error('This person is unavailable.');
+    const accepted = this.store.contacts.some((c) => c.status === 'accepted' && ((c.ownerId === a && c.contactUserId === b) || (c.ownerId === b && c.contactUserId === a)));
+    if (!accepted) throw new Error('The contact invitation must be accepted first.');
     const existing = this.store.conversations.find((conv) => {
       const members = this.store.members.filter((m) => m.conversationId === conv.id);
       const ids = members.map((m) => m.userId).sort();
@@ -577,6 +581,7 @@ export class Database {
     type: 'voice' | 'video';
     saveTranscript: boolean;
   }) {
+    if (!this.getUser(input.initiatorId) || !this.getUser(input.calleeId) || input.initiatorId === input.calleeId) throw new Error('Invalid call participants.');
     if (this.isBlocked(input.initiatorId, input.calleeId)) {
       throw new Error('This person is unavailable.');
     }

@@ -542,12 +542,16 @@ const server = createHttpServer(app, (req, socket) => {
         return;
       }
       client.userId = user.id;
+      client.authToken = String(payload.token);
       if (!sockets.has(user.id)) sockets.set(user.id, new Set());
       sockets.get(user.id)!.add(client);
       client.send(JSON.stringify({ type: 'ready', userId: user.id }));
       return;
     }
-    if (!client.userId) return;
+    if (!client.userId || !client.authToken || db.getSessionUser(client.authToken)?.id !== client.userId) {
+      client.close();
+      return;
+    }
     const userId = client.userId;
     if (payload.type === 'typing' && payload.conversationId) {
       const conversation = db.listConversations(userId).find((item) => item.id === payload.conversationId);
@@ -562,6 +566,8 @@ const server = createHttpServer(app, (req, socket) => {
     if (payload.type === 'call:action' && payload.callId) {
       const call = db.getCall(String(payload.callId));
       if (!call || (call.initiatorId !== userId && call.calleeId !== userId) || !['ringing', 'accepted', 'reconnecting'].includes(call.status)) return;
+      if (!['ready', 'repeat', 'slow', 'spell'].includes(String(payload.action))) return;
+      if (payload.action === 'ready' && call.status !== 'accepted') return;
       const otherId = call.initiatorId === userId ? call.calleeId : call.initiatorId;
       sendTo(otherId, { type: 'call:action', callId: call.id, action: payload.action, value: payload.value, from: userId });
     }

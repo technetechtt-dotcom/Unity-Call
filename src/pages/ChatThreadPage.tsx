@@ -216,6 +216,14 @@ export function ChatThreadPage() {
     } catch (error) { window.alert(error instanceof Error ? error.message : 'Could not delete message.'); }
   };
 
+  const createGuestRoom = async () => {
+    try {
+      if (!user) return;
+      const result = await api<{ url: string }>('/api/guest-links', { method: 'POST', body: JSON.stringify({ purpose: 'call', targetId: user.id }) });
+      navigate(result.url);
+    } catch (error) { window.alert(error instanceof Error ? error.message : 'Unable to create guest room.'); }
+  };
+
   const startCall = async (type: 'voice' | 'video') => {
     if (!conversation?.peer) return;
     const saveTranscript = window.confirm(
@@ -253,6 +261,7 @@ export function ChatThreadPage() {
           <button type="button" className="p-2 min-h-[48px]" aria-label="Search this conversation" onClick={() => setSearch(prompt('Search messages') || '')}>
             <Search size={20} />
           </button>
+          <button type="button" className="p-2 min-h-[48px] underline text-xs" onClick={() => void createGuestRoom()} aria-label="Create browser guest call invitation">Guest link</button>
           <button type="button" className="p-2 min-h-[48px]" aria-label={`Voice call ${conversation?.peer?.name || ''}`} onClick={() => void startCall('voice')}>
             <Phone size={20} />
           </button>

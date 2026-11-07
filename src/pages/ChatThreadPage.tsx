@@ -56,6 +56,9 @@ export function ChatThreadPage() {
           return [...prev, next];
         });
       }
+      if (payload.type === 'message:deleted' && payload.conversationId === id) {
+        setMessages(prev => prev.map(item => item.id === payload.messageId ? { ...item, type: 'system', body: undefined, media: undefined, mediaId: undefined } : item));
+      }
       if (payload.type === 'typing' && payload.conversationId === id) {
         setTyping(true);
         window.setTimeout(() => setTyping(false), 2000);
@@ -202,6 +205,14 @@ export function ChatThreadPage() {
     } catch { setMessages(prev => prev.map(item => item.id === message.id ? { ...item, status: 'failed' } : item)); }
   };
 
+  const deleteMessage = async (message: ChatMessage) => {
+    if (!window.confirm('Delete this message for everyone in this conversation?')) return;
+    try {
+      const result = await api<{ message: ChatMessage }>(`/api/messages/${message.id}`, { method: 'DELETE' });
+      setMessages(prev => prev.map(item => item.id === message.id ? result.message : item));
+    } catch (error) { window.alert(error instanceof Error ? error.message : 'Could not delete message.'); }
+  };
+
   const startCall = async (type: 'voice' | 'video') => {
     if (!conversation?.peer) return;
     const saveTranscript = window.confirm(
@@ -260,6 +271,7 @@ export function ChatThreadPage() {
             source={msg.source}
             media={msg.media}
             onRetry={msg.status === 'failed' ? () => void retry(msg) : undefined}
+            onDelete={msg.senderId === user?.id && msg.type !== 'system' && msg.status !== 'queued' ? () => void deleteMessage(msg) : undefined}
           />
         ))}
         {typing && <p className="text-sm opacity-70">{t('chat.typing')}</p>}

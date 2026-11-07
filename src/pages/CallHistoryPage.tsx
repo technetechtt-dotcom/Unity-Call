@@ -25,7 +25,7 @@ export function CallHistoryPage() {
       method: 'POST',
       body: JSON.stringify({ userId: call.peer.id, type: call.type, saveTranscript })
     });
-    navigate(`/calls/active/${data.call.id}`, { state: { outgoing: true, peerName: call.peer.name } });
+    navigate(`/calls/active/${data.call.id}`, { state: { outgoing: true, peerName: call.peer.name, callType: call.type } });
   };
 
   return (

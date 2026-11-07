@@ -72,7 +72,7 @@ test('guest invitation requires signed-in host and isolates a two-person relay',
         headers: { Origin: base, 'Content-Type': 'application/json', ...(cookie ? { Cookie: cookie } : {}) },
         body: JSON.stringify(body)
       });
-      assert(reply.ok, `POST ${url} failed: ${reply.status} ${await reply.text()}`);
+      if (!reply.ok) throw new Error(`POST ${url} failed: ${reply.status} ${await reply.text()}`);
       return reply;
     };
     const destination = 'guest-test@example.com';

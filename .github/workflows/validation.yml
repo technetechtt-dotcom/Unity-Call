@@ -15,6 +15,10 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci
+      - name: Install server dependencies
+        run: npm install --prefix server --no-package-lock
+      - name: Typecheck backend
+        run: npx tsc --noEmit --project server/tsconfig.json
       - name: Typecheck frontend
         run: npx tsc --noEmit
       - name: Lint

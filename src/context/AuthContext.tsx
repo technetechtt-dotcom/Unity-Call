@@ -7,7 +7,7 @@ import {
   useState,
   type ReactNode
 } from 'react';
-import { api, setToken, getToken } from '../lib/api';
+import { api, clearLegacyToken } from '../lib/api';
 import { realtime } from '../lib/socket';
 import type { SessionUser } from '../lib/types';
 
@@ -35,17 +35,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
-    if (!getToken()) {
-      setUser(null);
-      setLoading(false);
-      return;
-    }
     try {
       const data = await api<{ user: SessionUser }>('/api/auth/me');
       setUser(data.user);
       realtime.connect();
     } catch {
-      setToken(null);
+      clearLegacyToken();
       setUser(null);
     } finally {
       setLoading(false);
@@ -70,11 +65,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     name?: string;
     commPref?: SessionUser['commPref'];
   }) => {
-    const data = await api<{ token: string; user: SessionUser }>('/api/auth/otp/verify', {
+    const data = await api<{ user: SessionUser }>('/api/auth/otp/verify', {
       method: 'POST',
       body: JSON.stringify(input)
     });
-    setToken(data.token);
+    clearLegacyToken();
     setUser(data.user);
     realtime.connect();
   }, []);

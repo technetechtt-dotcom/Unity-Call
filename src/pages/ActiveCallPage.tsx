@@ -32,7 +32,7 @@ export function ActiveCallPage() {
   const [quality, setQuality] = useState('good');
   const [bytes, setBytes] = useState(0);
   const [duration, setDuration] = useState(0);
-  const [saveNotice] = useState('Transcripts are saved only if you chose that before this call.');
+  const [saveNotice] = useState('Transcripts are saved only when both participants agree before the call.');
   const localVideo = useRef<HTMLVideoElement>(null);
   const remoteVideo = useRef<HTMLVideoElement>(null);
   const localStream = useRef<MediaStream | null>(null);

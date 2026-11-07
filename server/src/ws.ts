@@ -9,7 +9,10 @@ const server = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024, perM
 export class MiniSocket {
   userId?: string;
   readonly OPEN = WebSocket.OPEN;
-  constructor(private readonly socket: WebSocket) {}
+  constructor(private readonly socket: WebSocket) {
+    socket.on('error', () => socket.terminate());
+  }
+  authToken?: string;
   get readyState() { return this.socket.readyState; }
   send(data: string) { if (this.readyState === this.OPEN) this.socket.send(data); }
   close() { this.socket.close(); }

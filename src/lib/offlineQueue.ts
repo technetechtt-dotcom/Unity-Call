@@ -1,6 +1,9 @@
 const KEY = 'unity_outbox';
 
+// Do not allow queued private messages from one signed-in account to be sent by another.
+
 export interface QueuedMessage {
+  userId: string;
   clientId: string;
   conversationId: string;
   type: string;
@@ -21,11 +24,11 @@ function write(items: QueuedMessage[]) {
 }
 
 export function enqueueMessage(item: QueuedMessage) {
-  write([...read(), item]);
+  write([...read().filter(row => row.clientId !== item.clientId), item]);
 }
 
-export function peekQueue() {
-  return read();
+export function peekQueue(userId: string) {
+  return read().filter(row => row.userId === userId);
 }
 
 export function removeQueued(clientId: string) {

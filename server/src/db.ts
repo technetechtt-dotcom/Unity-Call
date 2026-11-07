@@ -52,7 +52,7 @@ function hashToken(token: string) {
 }
 
 function seedOrganizations(store: StoreData) {
-  if (store.organizations.length > 0) return;
+  if (process.env.NODE_ENV === 'production' || store.organizations.length > 0) return;
   const campus: Organization = {
     id: 'org_campus',
     name: 'Unity Campus Pilot',
@@ -267,6 +267,7 @@ export class Database {
     this.store.calls = this.store.calls.filter((c) => !removedCalls.has(c.id));
     this.store.transcripts = this.store.transcripts.filter((t) => !removedCalls.has(t.callId) && t.speakerId !== userId);
     this.store.contacts = this.store.contacts.filter((c) => c.ownerId !== userId && c.contactUserId !== userId);
+    this.store.orgMembers = this.store.orgMembers.filter(m => m.userId !== userId);
     this.store.blocks = this.store.blocks.filter((b) => b.blockerId !== userId && b.blockedId !== userId);
     this.store.reports = this.store.reports.filter((r) => r.reporterId !== userId && r.targetUserId !== userId);
     this.store.interpreters = this.store.interpreters.filter((i) => i.userId !== userId);
@@ -811,6 +812,57 @@ export class Database {
     );
   }
 
+  assertOrgRole(userId: string, orgId: string, roles: Array<'admin' | 'staff' | 'viewer'> = ['admin','staff','viewer']) {
+    const member = this.store.orgMembers.find((m) => m.userId === userId && m.orgId === orgId && roles.includes(m.role));
+    if (!member) throw new Error('You do not have permission for this organisation.');
+    return member;
+  }
+
+  createOrganization(ownerId: string, name: string, kind: string, description?: string) {
+    if (!this.getUser(ownerId) || name.trim().length < 2 || name.length > 120) throw new Error('Enter a valid organisation name.');
+    if (!['business','municipality','campus','hospital','nonprofit','other'].includes(kind)) throw new Error('Invalid organisation category.');
+    const org: Organization = { id: randomUUID(), name: name.trim(), kind, description: description?.slice(0, 1000), createdAt: now() };
+    this.store.organizations.push(org);
+    this.store.orgMembers.push({ orgId: org.id, userId: ownerId, role: 'admin' });
+    this.persist();
+    return org;
+  }
+
+  listManagedOrganizations(userId: string) {
+    return this.store.orgMembers.filter(m => m.userId === userId).map(m => ({ ...this.store.organizations.find(o => o.id === m.orgId), role: m.role, desks: this.store.desks.filter(d => d.orgId === m.orgId) }));
+  }
+
+  addOrgMember(actorId: string, orgId: string, targetId: string, role: 'admin' | 'staff' | 'viewer') {
+    this.assertOrgRole(actorId, orgId, ['admin']);
+    if (!this.getUser(targetId)) throw new Error('User not found.');
+    if (!['staff','viewer'].includes(role)) throw new Error('Only staff and viewer roles can be assigned through invitations.');
+    if (this.store.orgMembers.some(m => m.orgId === orgId && m.userId === targetId)) throw new Error('User already belongs to this organisation.');
+    const member = { orgId, userId: targetId, role };
+    this.store.orgMembers.push(member);
+    this.persist();
+    return member;
+  }
+
+  createDesk(actorId: string, orgId: string, name: string) {
+    this.assertOrgRole(actorId, orgId, ['admin']);
+    if (name.trim().length < 2 || name.length > 80) throw new Error('Enter a valid service desk name.');
+    const desk = { id: randomUUID(), orgId, name: name.trim() };
+    this.store.desks.push(desk);
+    this.persist(); return desk;
+  }
+
+  listOrgAppointments(actorId: string, orgId: string) {
+    this.assertOrgRole(actorId, orgId, ['admin','staff']);
+    return this.store.appointments.filter(a => a.orgId === orgId);
+  }
+
+  updateOrgAppointment(actorId: string, orgId: string, appointmentId: string, status: 'completed' | 'cancelled') {
+    this.assertOrgRole(actorId, orgId, ['admin','staff']);
+    const item = this.store.appointments.find(a => a.orgId === orgId && a.id === appointmentId);
+    if (!item || item.status !== 'booked') throw new Error('Active appointment not found.');
+    item.status = status; this.persist(); return item;
+  }
+
   listOrganizations() {
     return this.store.organizations.map((org) => ({
       ...org,
@@ -821,6 +873,8 @@ export class Database {
   joinQueue(userId: string, deskId: string) {
     const desk = this.store.desks.find((d) => d.id === deskId);
     if (!desk) throw new Error('Service desk not found.');
+    const existing = this.store.queues.find(q => q.deskId === deskId && q.visitorId === userId && ['waiting','active'].includes(q.status));
+    if (existing) return existing;
     const waiting = this.store.queues.filter((q) => q.deskId === deskId && q.status === 'waiting');
     const item: QueueItem = {
       id: randomUUID(),
@@ -841,6 +895,22 @@ export class Database {
     const appointment = this.store.appointments.find((a) => a.id === id && a.userId === userId);
     if (!appointment || appointment.status !== 'booked') throw new Error('Booking not found.');
     appointment.status = 'cancelled'; this.persist(); return appointment;
+  }
+
+  updateQueueItem(actorId: string, deskId: string, itemId: string, status: 'active' | 'done') {
+    const desk = this.store.desks.find(d => d.id === deskId);
+    if (!desk) throw new Error('Service desk not found.');
+    this.assertOrgRole(actorId, desk.orgId, ['admin','staff']);
+    const item = this.store.queues.find(q => q.id === itemId && q.deskId === deskId);
+    if (!item || !['waiting','active'].includes(item.status)) throw new Error('Queue item not found.');
+    item.status = status; this.persist(); return item;
+  }
+
+  listQueue(actorId: string, deskId: string) {
+    const desk = this.store.desks.find(d => d.id === deskId);
+    if (!desk) throw new Error('Service desk not found.');
+    this.assertOrgRole(actorId, desk.orgId, ['admin','staff']);
+    return this.store.queues.filter(q => q.deskId === deskId && ['waiting','active'].includes(q.status));
   }
 
   createAppointment(userId: string, orgId: string, startsAt: string) {

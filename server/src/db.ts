@@ -189,7 +189,19 @@ export class Database {
     return user;
   }
 
+  addSecurityEvent(userId: string, action: 'session_created' | 'new_browser' | 'session_rotated' | 'session_revoked' | 'interpreter_review', details?: string) {
+    this.store.securityEvents.push({ id: randomUUID(), userId, action, details, createdAt: now() });
+    if (this.store.securityEvents.length > 50000) this.store.securityEvents = this.store.securityEvents.slice(-50000);
+    this.persist();
+  }
+
+  listSecurityEvents(userId: string) {
+    return this.store.securityEvents.filter(event => event.userId === userId).slice(-100).reverse();
+  }
+
   createSession(userId: string, userAgent?: string) {
+    const previouslySeen = this.store.sessions.some(s => s.userId === userId);
+    const familiar = this.store.sessions.some(s => s.userId === userId && s.userAgent === userAgent);
     const token = randomBytes(32).toString('hex');
     const session = {
       id: randomUUID(),
@@ -200,7 +212,7 @@ export class Database {
       createdAt: now()
     };
     this.store.sessions.push(session);
-    this.persist();
+    this.addSecurityEvent(userId, previouslySeen && userAgent && !familiar ? 'new_browser' : 'session_created', previouslySeen && userAgent && !familiar ? 'New browser signature detected after OTP sign-in' : 'OTP sign-in completed');
     return { token, session };
   }
 
@@ -221,7 +233,7 @@ export class Database {
     original.tokenHash = hashToken(nextToken);
     original.userAgent = userAgent || original.userAgent;
     original.expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
-    this.persist();
+    this.addSecurityEvent(original.userId, 'session_rotated');
     return { token: nextToken, session: original };
   }
 
@@ -239,6 +251,7 @@ export class Database {
     const count = this.store.sessions.length;
     this.store.sessions = this.store.sessions.filter((s) => !(s.userId === userId && s.id === sessionId));
     if (this.store.sessions.length === count) throw new Error('Session not found.');
+    this.addSecurityEvent(userId, 'session_revoked', 'Device session was revoked');
     this.persist();
   }
 
@@ -266,6 +279,7 @@ export class Database {
     user.name = 'Deleted account';
     this.revokeUserSessions(userId);
     this.store.preferences = this.store.preferences.filter((p) => p.userId !== userId);
+    this.store.securityEvents = this.store.securityEvents.filter(e => e.userId !== userId);
     for (const media of this.store.media.filter((m) => m.ownerId === userId)) {
       try { if (existsSync(media.path)) unlinkSync(media.path); } catch (error) { console.error('Media removal failed', media.id, error); }
     }
@@ -844,7 +858,7 @@ export class Database {
     interpreter.reviewedAt = now();
     interpreter.reviewedBy = actorId;
     if (decision !== 'approved') interpreter.available = false;
-    this.persist();
+    this.addSecurityEvent(actorId, 'interpreter_review', `Interpreter ${interpreterId}: ${decision}`);
     return interpreter;
   }
 

@@ -167,6 +167,15 @@ app.get('/api/auth/me', (req, res) => {
   json(res, 200, { user: privateUser(user), preferences: db.getPreferences(user.id).payload });
 });
 
+app.post('/api/auth/rotate', (req, res) => {
+  requireUser(req);
+  const token = tokenFrom(req);
+  if (!token) return json(res, 401, { error: 'Please sign in again.' });
+  const result = db.rotateSession(token, req.headers['user-agent']);
+  setSessionCookie(res, result.token);
+  json(res, 200, { ok: true, expiresAt: result.session.expiresAt });
+});
+
 app.get('/api/auth/sessions', (req, res) => {
   const user = requireUser(req);
   json(res, 200, { sessions: db.listSessions(user.id, tokenFrom(req)) });
@@ -497,6 +506,25 @@ app.get('/api/interpreters', (req, res) => {
     interpreters: db.listInterpreters(),
     notice: 'Unity books paid Deaf/SASL advisers and qualified interpreters. Profiles are requested, then independently verified before they appear as qualified.'
   });
+});
+
+app.get('/api/admin/me', (req, res) => {
+  const user = requireUser(req);
+  json(res, 200, { isAdmin: db.isPlatformAdmin(user.id) });
+});
+
+app.get('/api/admin/interpreters', (req, res) => {
+  const user = requireUser(req);
+  if (!db.isPlatformAdmin(user.id)) return json(res, 403, { error: 'Administrator access required.' });
+  json(res, 200, { interpreters: db.listInterpreters() });
+});
+
+app.patch('/api/admin/interpreters/:id/review', (req, res) => {
+  const user = requireUser(req);
+  const decision = String(req.body.decision);
+  if (!['approved', 'rejected', 'suspended'].includes(decision)) return json(res, 400, { error: 'Invalid review decision.' });
+  const interpreter = db.reviewInterpreter(user.id, req.params.id, decision as 'approved' | 'rejected' | 'suspended');
+  json(res, 200, { interpreter });
 });
 
 app.post('/api/interpreters', (req, res) => {

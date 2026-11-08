@@ -147,6 +147,7 @@ export function SettingsPage() {
           <span className="flex items-center gap-2"><MessageSquare size={18} /> Caption overlay</span>
         </Link>
         <Link className="block px-4 py-2 underline" to="/interpreters">SASL interpreters</Link>
+        <Link className="block px-4 py-2 underline" to="/admin/interpreters">Interpreter verification (administrators)</Link>
         <Link className="block px-4 py-2 underline" to="/orgs">Organisation directory</Link>
         <Link className="block px-4 py-2 underline" to="/orgs/manage">Manage my organisations</Link>
         <Link className="block px-4 py-2 underline" to="/legal/help">Help</Link>

@@ -116,6 +116,8 @@ assert(db.isBlocked(alice.id, bob.id), 'block should isolate both sides');
 db.revokeSessionById(alice.id, devices[0].id);
 assert(!db.getSessionUser(token), 'revoked sessions must not authenticate');
 db.deleteAccount(bob.id);
+assert(db.listMessages(conversation.id, alice.id).some(item => item.body === 'Page 0'), 'deleting one user must preserve messages authored by the remaining account');
+assert(!db.listMessages(conversation.id, alice.id).some(item => item.senderId === bob.id), 'deleted sender content must be erased');
 assert(!db.getUser(bob.id), 'deleted accounts must not resolve');
 assert(!db.listAppointments(bob.id).length, 'deleted account appointments must be erased');
 rmSync(tempDirectory, { recursive: true, force: true });

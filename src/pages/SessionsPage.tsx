@@ -81,7 +81,7 @@ export function SessionsPage() {
         {securityEvents.some(event => event.action === 'new_browser') && <p className="text-sm">A new browser signature was detected. If you do not recognise a session, sign out that device or all devices.</p>}
         {securityEvents.length === 0 && <p>No recent security events.</p>}
         {securityEvents.slice(0, 20).map(event => <article key={event.id} className="p-3 rounded-xl bg-white text-gray-900">
-          <p className="font-medium">{event.action.replaceAll('_', ' ')}</p>
+          <p className="font-medium">{event.action.replace(/_/g, ' ')}</p>
           <p className="text-sm">{event.details || 'Account security update'} · {new Date(event.createdAt).toLocaleString()}</p>
         </article>)}
       </section>

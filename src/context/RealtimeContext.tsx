@@ -87,8 +87,10 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
         }
       }
       if (payload.type === 'contact:invite') {
-        addToast('You have a new contact invitation.', 'info');
+        addToast('You have a new contact invitation. Open Contacts to respond.', 'info');
       }
+      if (payload.type === 'contact:accepted') addToast('Your contact invitation was accepted. You can now chat.', 'success');
+      if (payload.type === 'contact:declined') addToast('A contact invitation was declined.', 'info');
     },
     [addToast, navigate, ttsEnabled, user?.id, vibrationEnabled]
   );

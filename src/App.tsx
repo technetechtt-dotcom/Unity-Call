@@ -25,6 +25,7 @@ import { OrganisationAdminPage } from './pages/OrganisationAdminPage';
 import { GuestJoinPage } from './pages/GuestJoinPage';
 import { LegalPage } from './pages/LegalPage';
 import { NotFoundPage } from './pages/NotFoundPage';
+import { AppUpdateNotice } from './components/AppUpdateNotice';
 import './i18n/config';
 
 function HomeRedirect() {
@@ -88,6 +89,7 @@ export function App() {
         <ToastProvider>
           <BrowserRouter>
             <AppRoutes />
+            <AppUpdateNotice />
           </BrowserRouter>
         </ToastProvider>
       </AuthProvider>

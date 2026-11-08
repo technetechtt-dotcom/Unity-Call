@@ -4,14 +4,20 @@ import { api, clearLegacyToken } from '../lib/api';
 import { Button } from '../components/ui/Button';
 
 type Session = { id: string; userAgent?: string; createdAt: string; expiresAt: string; current: boolean };
+type SecurityEvent = { id: string; action: string; details?: string; createdAt: string };
 export function SessionsPage() {
   const navigate = useNavigate();
   const [sessions, setSessions] = useState<Session[]>([]);
+  const [securityEvents, setSecurityEvents] = useState<SecurityEvent[]>([]);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const load = async () => {
-    const data = await api<{ sessions: Session[] }>('/api/auth/sessions');
+    const [data, history] = await Promise.all([
+      api<{ sessions: Session[] }>('/api/auth/sessions'),
+      api<{ events: SecurityEvent[] }>('/api/auth/security-events')
+    ]);
     setSessions(data.sessions);
+    setSecurityEvents(history.events);
   };
   useEffect(() => { void load().catch((e: Error) => setError(e.message)); }, []);
   const revoke = async (id: string, current: boolean) => {
@@ -69,6 +75,15 @@ export function SessionsPage() {
           <Button variant="outline" onClick={() => void revoke(s.id, s.current)}>Sign out device</Button>
         </article>)}
         <Button onClick={() => void signOutAll()}>Sign out on all devices</Button>
+      </section>
+      <section className="space-y-2">
+        <h2 className="font-semibold">Recent security activity</h2>
+        {securityEvents.some(event => event.action === 'new_browser') && <p className="text-sm">A new browser signature was detected. If you do not recognise a session, sign out that device or all devices.</p>}
+        {securityEvents.length === 0 && <p>No recent security events.</p>}
+        {securityEvents.slice(0, 20).map(event => <article key={event.id} className="p-3 rounded-xl bg-white text-gray-900">
+          <p className="font-medium">{event.action.replaceAll('_', ' ')}</p>
+          <p className="text-sm">{event.details || 'Account security update'} · {new Date(event.createdAt).toLocaleString()}</p>
+        </article>)}
       </section>
       <section className="space-y-2">
         <h2 className="font-semibold">Your personal information</h2>

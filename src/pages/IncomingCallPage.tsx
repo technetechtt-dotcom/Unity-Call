@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useLocation, useNavigate, useParams } from '../lib/router';
 import { Phone, PhoneOff } from 'lucide-react';
 import { motion } from 'framer-motion';
@@ -15,7 +15,27 @@ export function IncomingCallPage() {
   const { highContrast, vibrationEnabled, ttsEnabled } = useAccessibility();
   const { user } = useAuth();
   const state = location.state as { call?: CallRecord; caller?: { name: string } } | null;
-  const callerName = state?.caller?.name || 'Incoming caller';
+  const [current, setCurrent] = useState<{ call: CallRecord; caller: { name: string } } | null>(
+    state?.call ? { call: state.call, caller: state.caller || { name: 'Incoming caller' } } : null
+  );
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(!state?.call);
+  const [busy, setBusy] = useState(false);
+  const callerName = current?.caller.name || 'Incoming caller';
+
+  useEffect(() => {
+    if (!id || current) return;
+    let active = true;
+    void api<{ call: CallRecord & { peer: { name: string } } }>(`/api/calls/${id}`)
+      .then(({ call }) => {
+        if (!active) return;
+        if (call.status !== 'ringing') { navigate('/calls'); return; }
+        setCurrent({ call, caller: { name: call.peer.name } });
+      })
+      .catch(e => { if (active) setError(e instanceof Error ? e.message : 'Unable to load incoming call.'); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [id, current, navigate]);
 
   useEffect(() => {
     announce(`Incoming call from ${callerName}`);
@@ -31,14 +51,18 @@ export function IncomingCallPage() {
   }, [callerName, ttsEnabled, vibrationEnabled]);
 
   const act = async (action: 'accept' | 'reject') => {
-    if (!id) return;
+    if (!id || !current || busy) return;
+    setError(''); setBusy(true);
     window.speechSynthesis.cancel();
-    const saveTranscript = action === 'accept' && !!state?.call?.transcriptRequested
+    const saveTranscript = action === 'accept' && !!current.call.transcriptRequested
       ? window.confirm('The caller requested to save a transcript. Allow Unity to save this call transcript? Live captions work even if you decline.')
       : false;
-    await api(`/api/calls/${id}/${action}`, { method: 'POST', body: JSON.stringify({ saveTranscript }) });
-    if (action === 'accept') navigate(`/calls/active/${id}`, { state: { incoming: true, peerName: callerName, callType: state?.call?.type } });
-    else navigate('/chats');
+    try {
+      await api(`/api/calls/${id}/${action}`, { method: 'POST', body: JSON.stringify({ saveTranscript }) });
+      if (action === 'accept') navigate(`/calls/active/${id}`, { state: { incoming: true, peerName: callerName, callType: current.call.type } });
+      else navigate('/chats');
+    } catch (e) { setError(e instanceof Error ? e.message : 'Unable to respond to call.'); }
+    finally { setBusy(false); }
   };
 
   return (
@@ -54,11 +78,14 @@ export function IncomingCallPage() {
         </div>
         <h1 className="text-4xl font-bold mb-2">{callerName}</h1>
         <p className="text-xl mb-6">Incoming call</p>
+        {loading && <p role="status">Loading call details…</p>}
+        {error && <p role="alert" className="text-yellow-300">{error}</p>}
         <p className="text-sm opacity-80">Visual flash, spoken name, and vibration are on if you enabled them. Call audio starts only after you accept.</p>
       </main>
       <footer className="p-8 grid grid-cols-2 gap-4">
         <button
           type="button"
+          disabled={busy || !current}
           onClick={() => void act('reject')}
           className="min-h-[72px] rounded-2xl bg-danger text-white"
           aria-label="Reject call"
@@ -68,6 +95,7 @@ export function IncomingCallPage() {
         </button>
         <button
           type="button"
+          disabled={busy || !current}
           onClick={() => void act('accept')}
           className="min-h-[72px] rounded-2xl bg-success text-white"
           aria-label="Accept call"

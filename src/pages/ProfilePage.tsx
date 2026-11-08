@@ -12,14 +12,22 @@ export function ProfilePage() {
   const navigate = useNavigate();
   const { addToast } = useToast();
   const [name, setName] = useState(user?.name || '');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
   const [commPref, setCommPref] = useState<CommPref>(user?.commPref || 'text');
   const [discoverable, setDiscoverable] = useState(user?.discoverable ?? true);
 
   const save = async (event: React.FormEvent) => {
     event.preventDefault();
-    await updateProfile({ name, commPref, discoverable });
-    addToast('Profile updated', 'success');
-    navigate('/settings');
+    if (saving) return;
+    if (!name.trim() || name.length > 120) { setError('Enter a display name of up to 120 characters.'); return; }
+    setSaving(true); setError('');
+    try {
+      await updateProfile({ name: name.trim(), commPref, discoverable });
+      addToast('Profile updated', 'success');
+      navigate('/settings');
+    } catch (err) { setError(err instanceof Error ? err.message : 'Unable to save profile.'); }
+    finally { setSaving(false); }
   };
 
   return (
@@ -53,7 +61,8 @@ export function ProfilePage() {
           <input type="checkbox" checked={discoverable} onChange={(e) => setDiscoverable(e.target.checked)} />
           Allow people to find me by name, email, or phone
         </label>
-        <Button type="submit" fullWidth>Save</Button>
+        {error && <p role="alert" className="text-red-700">{error}</p>}
+        <Button type="submit" fullWidth disabled={saving}>{saving ? "Saving…" : "Save"}</Button>
       </form>
     </div>
   );

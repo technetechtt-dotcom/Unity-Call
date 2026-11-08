@@ -148,6 +148,9 @@ export interface Report {
 export interface Interpreter {
   id: string;
   userId: string;
+  reviewStatus?: 'pending' | 'approved' | 'rejected' | 'suspended';
+  reviewedAt?: string;
+  reviewedBy?: string;
   bio?: string;
   languages: string[];
   qualified: boolean;

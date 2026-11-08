@@ -184,7 +184,13 @@ export class Database {
   updateUser(id: string, patch: Partial<Pick<User, 'name' | 'commPref' | 'discoverable' | 'language' | 'email' | 'phone'>>) {
     const user = this.getUser(id);
     if (!user) throw new Error('Account not found.');
-    Object.assign(user, patch);
+    if (patch.name !== undefined && (typeof patch.name !== 'string' || patch.name.trim().length < 1 || patch.name.length > 120)) throw new Error('Invalid display name.');
+    if (patch.commPref !== undefined && !['audio','text','video','sign'].includes(patch.commPref)) throw new Error('Invalid communication preference.');
+    if (patch.discoverable !== undefined && typeof patch.discoverable !== 'boolean') throw new Error('Invalid discovery preference.');
+    if (patch.language !== undefined && (typeof patch.language !== 'string' || patch.language.length > 70)) throw new Error('Invalid language.');
+    // Contact details may only be changed after independent ownership verification.
+    if (patch.email !== undefined || patch.phone !== undefined) throw new Error('Contact details require verification.');
+    Object.assign(user, patch, patch.name !== undefined ? { name: patch.name.trim() } : {});
     this.persist();
     return user;
   }

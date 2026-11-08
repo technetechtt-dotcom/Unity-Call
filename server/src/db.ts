@@ -269,12 +269,14 @@ export class Database {
     for (const media of this.store.media.filter((m) => m.ownerId === userId)) {
       try { if (existsSync(media.path)) unlinkSync(media.path); } catch (error) { console.error('Media removal failed', media.id, error); }
     }
-    const removedConversations = new Set(this.store.members.filter((m) => m.userId === userId).map((m) => m.conversationId));
     const removedCalls = new Set(this.store.calls.filter((c) => c.initiatorId === userId || c.calleeId === userId).map((c) => c.id));
     this.store.media = this.store.media.filter((m) => m.ownerId !== userId);
-    this.store.messages = this.store.messages.filter((m) => m.senderId !== userId && !removedConversations.has(m.conversationId));
-    this.store.members = this.store.members.filter((m) => !removedConversations.has(m.conversationId));
-    this.store.conversations = this.store.conversations.filter((c) => !removedConversations.has(c.id));
+    // Erase the deleted user's data without destroying messages authored by other participants.
+    this.store.messages = this.store.messages.filter(m => m.senderId !== userId);
+    this.store.members = this.store.members.filter(m => m.userId !== userId);
+    const activeConversations = new Set(this.store.members.map(m => m.conversationId));
+    this.store.conversations = this.store.conversations.filter(c => activeConversations.has(c.id));
+    this.store.messages = this.store.messages.filter(m => activeConversations.has(m.conversationId));
     this.store.calls = this.store.calls.filter((c) => !removedCalls.has(c.id));
     this.store.transcripts = this.store.transcripts.filter((t) => !removedCalls.has(t.callId) && t.speakerId !== userId);
     this.store.contacts = this.store.contacts.filter((c) => c.ownerId !== userId && c.contactUserId !== userId);

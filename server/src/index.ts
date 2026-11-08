@@ -227,22 +227,31 @@ app.get('/api/contacts', (req, res) => {
 app.post('/api/contacts/invite', (req, res) => {
   const user = requireUser(req);
   let targetId = req.body.userId as string | undefined;
-  if (!targetId && req.body.destination) {
-    const found = db.findUserByDestination(String(req.body.destination));
-    if (!found) return json(res, 404, { error: 'No Unity account uses that phone or email yet.' });
-    targetId = found.id;
+  if (!targetId && typeof req.body.destination === 'string') {
+    const destination = String(req.body.destination).trim().toLowerCase();
+    if (!(destination.includes('@') ? /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(destination) : /^\\+[1-9]\\d{7,14}$/.test(destination))) return json(res, 400, { error: 'Enter a valid email or international phone number.' });
+    targetId = db.findUserByDestination(destination)?.id;
   }
-  if (!targetId) return json(res, 400, { error: 'Choose a person to invite.' });
+  if (!targetId) return json(res, 202, { ok: true, message: 'Invitation request received if the person is eligible.' });
+  if (!db.getUser(targetId) || targetId === user.id || db.isBlocked(user.id, targetId)) return json(res, 202, { ok: true, message: 'Invitation request received if the person is eligible.' });
   const contact = db.inviteContact(user.id, targetId);
-  sendTo(targetId, { type: 'contact:invite', contact });
-  json(res, 200, { contact });
+  if (contact.status === 'pending') sendTo(targetId, { type: 'contact:invite', contactId: contact.id });
+  json(res, 200, { ok: true, status: contact.status });
 });
 
 app.post('/api/contacts/:id/accept', (req, res) => {
   const user = requireUser(req);
   const contact = db.acceptContact(user.id, req.params.id);
-  sendTo(contact.ownerId, { type: 'contact:accepted', contact });
+  sendTo(contact.ownerId, { type: 'contact:accepted', contactId: contact.id });
+  sendTo(user.id, { type: 'contact:accepted', contactId: contact.id });
   json(res, 200, { contact });
+});
+
+app.post('/api/contacts/:id/decline', (req, res) => {
+  const user = requireUser(req);
+  const declined = db.declineContact(user.id, req.params.id);
+  sendTo(declined.ownerId, { type: 'contact:declined', contactId: declined.id });
+  json(res, 200, { ok: true });
 });
 
 app.post('/api/users/:id/block', (req, res) => {

@@ -23,6 +23,14 @@ export function SessionsPage() {
       setMessage('Session signed out.');
     } catch (e) { setError(e instanceof Error ? e.message : 'Could not end session.'); }
   };
+  const renewSession = async () => {
+    setError(''); setMessage('');
+    try {
+      await api('/api/auth/rotate', { method: 'POST' });
+      // Old WebSocket authentications contain the previous token and must reconnect.
+      window.location.reload();
+    } catch (e) { setError(e instanceof Error ? e.message : 'Unable to renew session.'); }
+  };
   const signOutAll = async () => {
     if (!window.confirm('Sign out on all devices, including this one?')) return;
     try {
@@ -51,6 +59,7 @@ export function SessionsPage() {
       {message && <p role="status" className="text-green-800">{message}</p>}
       <section className="space-y-3">
         <h2 className="font-semibold">Active sessions</h2>
+        <Button variant="outline" onClick={() => void renewSession()}>Renew and rotate this session securely</Button>
         {sessions.length === 0 && <p>No active sessions found.</p>}
         {sessions.map(s => <article key={s.id} className="bg-white rounded-xl p-4 space-y-2">
           <p className="font-semibold">{s.current ? 'This device' : 'Other device'}</p>

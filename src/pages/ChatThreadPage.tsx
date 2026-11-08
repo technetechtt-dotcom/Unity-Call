@@ -22,6 +22,10 @@ export function ChatThreadPage() {
   const { speak } = useTTS();
   const recorder = useVoiceRecorder();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const [error, setError] = useState('');
+  const [mediaBusy, setMediaBusy] = useState(false);
   const [conversation, setConversation] = useState<ConversationSummary>();
   const [inputText, setInputText] = useState('');
   const [search, setSearch] = useState('');
@@ -31,16 +35,17 @@ export function ChatThreadPage() {
   const load = async () => {
     if (!id) return;
     const [inbox, list] = await Promise.all([
-      api<{ messages: ChatMessage[] }>(`/api/conversations/${id}/messages${search ? `?q=${encodeURIComponent(search)}` : ''}`),
+      api<{ messages: ChatMessage[]; nextCursor: string | null }>(`/api/conversations/${id}/messages?limit=30${search ? `&q=${encodeURIComponent(search)}` : ''}`),
       api<{ conversations: ConversationSummary[] }>('/api/conversations')
     ]);
     setMessages(inbox.messages);
+    setNextCursor(inbox.nextCursor);
     setConversation(list.conversations.find((item) => item.id === id));
     await api(`/api/conversations/${id}/read`, { method: 'POST' });
   };
 
   useEffect(() => {
-    void load();
+    void load().catch(err => setError(err instanceof Error ? err.message : 'Failed to load conversation.'));
     // Reload when the conversation or search changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, search]);
@@ -104,7 +109,7 @@ export function ChatThreadPage() {
       setMessages((prev) => [...prev, sent.message]);
       recorder.resetRecording();
     };
-    void upload();
+    void upload().catch(err => setError(err instanceof Error ? err.message : 'Voice message upload failed.'));
   }, [id, recorder.audioBlob, recorder.isRecording]);
 
   const flushQueue = async () => {
@@ -131,6 +136,17 @@ export function ChatThreadPage() {
     void flushQueue();
     return () => window.removeEventListener('online', onOnline);
   }, [id]);
+
+  const loadOlder = async () => {
+    if (!id || !nextCursor || loadingOlder) return;
+    setLoadingOlder(true); setError('');
+    try {
+      const result = await api<{ messages: ChatMessage[]; nextCursor: string | null }>(`/api/conversations/${id}/messages?limit=30&before=${encodeURIComponent(nextCursor)}${search ? `&q=${encodeURIComponent(search)}` : ''}`);
+      setMessages(previous => [...result.messages.filter(item => !previous.some(existing => existing.id === item.id)), ...previous]);
+      setNextCursor(result.nextCursor);
+    } catch (err) { setError(err instanceof Error ? err.message : 'Could not load earlier messages.'); }
+    finally { setLoadingOlder(false); }
+  };
 
   const sendText = async (text = inputText) => {
     if (!id || !text.trim()) return;
@@ -167,7 +183,9 @@ export function ChatThreadPage() {
   };
 
   const attachFile = async (file: File) => {
-    if (!id) return;
+    if (!id || mediaBusy) return;
+    setMediaBusy(true); setError('');
+    try {
     const kind = file.type.startsWith('image')
       ? 'image'
       : file.type.startsWith('video')
@@ -190,6 +208,8 @@ export function ChatThreadPage() {
       })
     });
     setMessages((prev) => [...prev, sent.message]);
+    } catch (err) { setError(err instanceof Error ? err.message : 'File upload failed. Please retry.'); }
+    finally { setMediaBusy(false); }
   };
 
   const retry = async (message: ChatMessage) => {
@@ -272,6 +292,8 @@ export function ChatThreadPage() {
       </header>
 
       <main className="flex-1 overflow-y-auto px-4 py-4" role="log" aria-label="Message history">
+        {error && <p role="alert" className="text-red-700 bg-white p-2 rounded mb-2">{error}</p>}
+        {nextCursor && <button type="button" className="underline min-h-[44px] mb-2" disabled={loadingOlder} onClick={() => void loadOlder()}>{loadingOlder ? 'Loading earlier messages…' : 'Load earlier messages'}</button>}
         {visible.map((msg) => (
           <ChatBubble
             key={msg.id}
@@ -331,7 +353,7 @@ export function ChatThreadPage() {
                 event.currentTarget.value = '';
               }}
             />
-            <Paperclip />
+            {mediaBusy ? <span role="status">Uploading…</span> : <Paperclip />}
           </label>
           {inputText && !recorder.isRecording ? (
             <button type="submit" className="p-3 rounded-full bg-primary text-white min-h-[48px]" aria-label={t('chat.send')}>

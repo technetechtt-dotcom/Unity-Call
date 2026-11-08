@@ -120,6 +120,48 @@ test('guest invitation requires signed-in host and isolates a two-person relay',
     const invalid = expectEvent(bad, 'guest:error');
     bad.send(JSON.stringify({ type: 'guest:join', token: 'invalid-token' }));
     assert.match(String((await invalid).error), /invalid or expired/);
+    phase = 'two-user contact lifecycle';
+    const secondDestination = 'second-test@example.com';
+    const secondOtp = await (await post('/api/auth/otp/request', { destination: secondDestination, purpose: 'register' })).json() as { devCode: string };
+    const secondResponse = await post('/api/auth/otp/verify', { destination: secondDestination, purpose: 'register', code: secondOtp.devCode, name: 'Second user' });
+    const secondCookie = secondResponse.headers.get('set-cookie')?.split(';')[0];
+    assert(secondCookie);
+    const second = await secondResponse.json() as { user: { id: string } };
+    const earlyConversation = await fetch(base + '/api/conversations', {
+      method: 'POST', headers: { Origin: base, Cookie: cookie, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId: second.user.id })
+    });
+    assert.equal(earlyConversation.status, 400, 'unapproved conversation creation must fail');
+    const invited = await post('/api/contacts/invite', { userId: second.user.id }, cookie);
+    assert.equal((await invited.json() as { status: string }).status, 'pending');
+    const secondContacts = await (await fetch(base + '/api/contacts', { headers: { Cookie: secondCookie } })).json() as { contacts: Array<{ id: string; direction: string; status: string }> };
+    const invitation = secondContacts.contacts.find(item => item.direction === 'incoming' && item.status === 'pending');
+    assert(invitation, 'recipient must see pending invite');
+    await post(`/api/contacts/${invitation.id}/accept`, {}, secondCookie);
+    const accepted = await (await fetch(base + '/api/contacts', { headers: { Cookie: cookie } })).json() as { contacts: Array<{ status: string }> };
+    assert(accepted.contacts.some(item => item.status === 'accepted'), 'sender must see accepted contact');
+    const conversationResponse = await post('/api/conversations', { userId: second.user.id }, cookie);
+    const conversation = await conversationResponse.json() as { conversation: { id: string } };
+    const sent = await (await post(`/api/conversations/${conversation.conversation.id}/messages`, { type: 'text', body: 'Hello from integration test', clientId: 'integration-1' }, cookie)).json() as { message: { id: string } };
+    const messagesResponse = await fetch(base + `/api/conversations/${conversation.conversation.id}/messages`, { headers: { Cookie: secondCookie } });
+    assert.equal(messagesResponse.status, 200);
+    const messages = await messagesResponse.json() as { messages: Array<{ id: string }> };
+    assert(messages.messages.some(item => item.id === sent.message.id), 'recipient can read message');
+    const outsiderStatus = await fetch(base + `/api/messages/${sent.message.id}/retry`, {
+      method: 'POST', headers: { Origin: base, Cookie: secondCookie, 'Content-Type': 'application/json' },
+      body: '{}'
+    });
+    assert.equal(outsiderStatus.status, 400, 'recipient cannot forge sender retry status');
+    await post(`/api/conversations/${conversation.conversation.id}/read`, {}, secondCookie);
+    const senderMessages = await (await fetch(base + `/api/conversations/${conversation.conversation.id}/messages`, { headers: { Cookie: cookie } })).json() as { messages: Array<{ id: string; status: string }> };
+    assert(senderMessages.messages.some(item => item.id === sent.message.id && item.status === 'read'), 'read receipt persists');
+    await post(`/api/users/${second.user.id}/block`, {}, cookie);
+    const blockedPost = await fetch(base + `/api/conversations/${conversation.conversation.id}/messages`, {
+      method: 'POST', headers: { Origin: base, Cookie: cookie, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'text', body: 'Must be blocked' })
+    });
+    assert.equal(blockedPost.ok, false, 'blocked participants may not send new messages');
+
   } catch (error) {
     throw new Error(`${phase}: ${error instanceof Error ? error.message : String(error)}; server log: ${serverOutput.slice(-3500)}`);
   } finally {

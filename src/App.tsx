@@ -19,6 +19,7 @@ import { CallHistoryPage } from './pages/CallHistoryPage';
 import { ProfilePage } from './pages/ProfilePage';
 import { PrivacyPage } from './pages/PrivacyPage';
 import { InterpretersPage } from './pages/InterpretersPage';
+import { InterpreterAdminPage } from './pages/InterpreterAdminPage';
 import { OrganizationsPage } from './pages/OrganizationsPage';
 import { OrganisationAdminPage } from './pages/OrganisationAdminPage';
 import { GuestJoinPage } from './pages/GuestJoinPage';
@@ -69,6 +70,7 @@ function AppRoutes() {
           <Route path="/settings/privacy" element={<PrivacyPage />} />
           <Route path="/settings/captions" element={<CaptionOverlayPage />} />
           <Route path="/interpreters" element={<InterpretersPage />} />
+          <Route path="/admin/interpreters" element={<InterpreterAdminPage />} />
           <Route path="/orgs" element={<OrganizationsPage />} />
           <Route path="/orgs/manage" element={<OrganisationAdminPage />} />
         </Route>

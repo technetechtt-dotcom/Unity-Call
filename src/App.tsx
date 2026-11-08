@@ -9,6 +9,7 @@ import { OnboardingPage } from './pages/OnboardingPage';
 import { ChatListPage } from './pages/ChatListPage';
 import { ChatThreadPage } from './pages/ChatThreadPage';
 import { NewChatPage } from './pages/NewChatPage';
+import { ContactsPage } from './pages/ContactsPage';
 import { IncomingCallPage } from './pages/IncomingCallPage';
 import { ActiveCallPage } from './pages/ActiveCallPage';
 import { SettingsPage } from './pages/SettingsPage';
@@ -57,6 +58,7 @@ function AppRoutes() {
         >
           <Route path="/chats" element={<ChatListPage />} />
           <Route path="/chats/new" element={<NewChatPage />} />
+          <Route path="/contacts" element={<ContactsPage />} />
           <Route path="/chats/:id" element={<ChatThreadPage />} />
           <Route path="/calls" element={<CallHistoryPage />} />
           <Route path="/calls/incoming/:id" element={<IncomingCallPage />} />

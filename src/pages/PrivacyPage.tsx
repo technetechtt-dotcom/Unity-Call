@@ -1,4 +1,5 @@
 import { useNavigate } from '../lib/router';
+import { useState } from 'react';
 import { ArrowLeft } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../lib/api';
@@ -7,6 +8,9 @@ import { Button } from '../components/ui/Button';
 export function PrivacyPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const [error, setError] = useState('');
+  const [message, setMessage] = useState('');
+  const [busy, setBusy] = useState(false);
 
   return (
     <div className="min-h-dvh">
@@ -19,11 +23,16 @@ export function PrivacyPage() {
       <main className="p-6 space-y-4">
         <p>Your communication preference stays private. Blocking removes messages and calls both ways.</p>
         <p>Signed-in as {user?.name}. Reports are reviewed by Unity staff and are not shown to the reported person.</p>
+        {error && <p role="alert" className="text-red-700">{error}</p>}
+        {message && <p role="status" className="text-green-700">{message}</p>}
         <form
           className="space-y-3"
           onSubmit={(event) => {
             event.preventDefault();
-            const data = new FormData(event.currentTarget);
+            if (busy) return;
+            const form = event.currentTarget;
+            const data = new FormData(form);
+            setError(''); setMessage(''); setBusy(true);
             void api('/api/reports', {
               method: 'POST',
               body: JSON.stringify({
@@ -31,7 +40,9 @@ export function PrivacyPage() {
                 reason: data.get('reason'),
                 details: data.get('details')
               })
-            }).then(() => navigate(-1));
+            }).then(() => { setMessage('Report submitted. Thank you for helping keep the platform safe.'); form.reset(); })
+              .catch(err => setError(err instanceof Error ? err.message : 'Unable to submit report.'))
+              .finally(() => setBusy(false));
           }}
         >
           <label className="block">
@@ -46,7 +57,7 @@ export function PrivacyPage() {
             Details
             <textarea name="details" className="w-full border rounded-lg p-3" rows={4} />
           </label>
-          <Button type="submit" fullWidth>Submit report</Button>
+          <Button type="submit" fullWidth disabled={busy}>{busy ? "Submitting…" : "Submit report"}</Button>
         </form>
       </main>
     </div>

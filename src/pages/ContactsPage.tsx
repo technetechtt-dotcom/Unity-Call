@@ -31,7 +31,7 @@ export function ContactsPage() {
         void refresh().catch(() => setError('Unable to refresh contact invitations.'));
       }
     });
-    return unsubscribe;
+    return () => { unsubscribe(); };
   }, []);
 
   const run = async (contact: Contact, action: 'accept' | 'decline' | 'chat' | 'block') => {

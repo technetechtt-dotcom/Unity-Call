@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link, useNavigate } from '../lib/router';
+import { Link, useLocation, useNavigate } from '../lib/router';
 import { Accessibility, AlertCircle, ArrowRight, Eye, Mail, Smartphone } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useAccessibility } from '../context/AccessibilityContext';
@@ -14,6 +14,9 @@ export function OnboardingPage({ mode = 'login' }: { mode?: 'login' | 'register'
   const { requestCode, verifyCode } = useAuth();
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const location = useLocation();
+  const requested = (location.state as { from?: unknown } | null)?.from;
+  const destination = typeof requested === 'string' && requested.startsWith('/') && !requested.startsWith('//') ? requested : '/chats';
   const [method, setMethod] = useState<'phone' | 'email'>('email');
   const [step, setStep] = useState<'input' | 'otp' | 'profile'>('input');
   const [inputValue, setInputValue] = useState('');
@@ -68,7 +71,7 @@ export function OnboardingPage({ mode = 'login' }: { mode?: 'login' | 'register'
         name,
         commPref
       });
-      navigate('/chats', { replace: true });
+      navigate(destination, { replace: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not verify that code.');
     } finally {

@@ -70,6 +70,7 @@ export function ChatListPage() {
 
       <main className="flex-1 overflow-y-auto px-4 py-4 space-y-2">
         {error && <p role="alert">{error}</p>}
+        <button type="button" onClick={() => navigate("/contacts")} className="w-full rounded-xl border border-teal-700 p-3 font-semibold min-h-[48px] text-left">Contacts and pending invitations</button>
         {filtered.length === 0 && <p className="opacity-70">{t('home.noChats')}</p>}
         {filtered.map((chat) => (
           <button

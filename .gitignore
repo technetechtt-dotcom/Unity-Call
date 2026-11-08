@@ -30,3 +30,7 @@ dist-ssr
 server/data
 data
 .env
+
+# Browser test artifacts
+playwright-report
+test-results

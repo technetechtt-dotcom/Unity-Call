@@ -16,6 +16,7 @@ function verifySecret(value: string, stored: string) {
 }
 import {
   emptyStore,
+  privateUser,
   type Appointment,
   type Booking,
   type CallRecord,
@@ -266,7 +267,27 @@ export class Database {
     if (!user) throw new Error('Account not found.');
     const ownConversations = new Set(this.store.members.filter((m) => m.userId === userId).map((m) => m.conversationId));
     const ownCalls = new Set(this.store.calls.filter((c) => c.initiatorId === userId || c.calleeId === userId).map((c) => c.id));
-    return { exportedAt: now(), user, preferences: this.getPreferences(userId).payload, contacts: this.listContacts(userId), messages: this.store.messages.filter((m) => ownConversations.has(m.conversationId)), calls: this.listCalls(userId), transcripts: this.store.transcripts.filter((t) => ownCalls.has(t.callId)), media: this.store.media.filter((m) => m.ownerId === userId).map(({ path: _path, ...m }) => m), bookings: this.listBookings(userId), appointments: this.store.appointments.filter((a) => a.userId === userId), consents: this.store.consents.filter((c) => c.userId === userId) };
+    return {
+      exportedAt: now(),
+      user: privateUser(user),
+      preferences: this.getPreferences(userId).payload,
+      contacts: this.listContacts(userId),
+      // Include shared conversation content only while the requester is a member.
+      messages: this.store.messages.filter(m => ownConversations.has(m.conversationId)),
+      calls: this.listCalls(userId),
+      transcripts: this.store.transcripts.filter(t => ownCalls.has(t.callId) && this.store.calls.some(c => c.id === t.callId && c.saveTranscript)),
+      media: this.store.media.filter(m => m.ownerId === userId).map(m => ({
+        id: m.id, ownerId: m.ownerId, kind: m.kind, mime: m.mime, size: m.size,
+        originalId: m.originalId, altText: m.altText, transcript: m.transcript,
+        captions: m.captions, createdAt: m.createdAt
+      })),
+      bookings: this.listBookings(userId).map(b => ({
+        id: b.id, interpreterId: b.interpreterId, requesterId: b.requesterId,
+        startsAt: b.startsAt, notes: b.notes, status: b.status, createdAt: b.createdAt
+      })),
+      appointments: this.store.appointments.filter(a => a.userId === userId),
+      consents: this.store.consents.filter(c => c.userId === userId)
+    };
   }
 
   revokeUserSessions(userId: string) {
@@ -629,13 +650,31 @@ export class Database {
     const message = this.store.messages.find(m => m.id === messageId && m.senderId === userId);
     if (!message) throw new Error('Message not found or not owned by you.');
     this.assertMember(message.conversationId, userId);
+    const mediaId = message.mediaId;
     // Preserve message ordering and delivery history while removing the content.
     message.body = undefined;
     message.mediaId = undefined;
     message.type = 'system';
     message.source = 'original';
     this.persist();
+    if (mediaId) this.removeUnreferencedMedia(mediaId);
     return this.hydrateMessage(message);
+  }
+
+  private removeUnreferencedMedia(mediaId: string) {
+    if (this.store.messages.some(message => message.mediaId === mediaId) ||
+        this.store.media.some(media => media.originalId === mediaId)) return;
+    const media = this.store.media.find(item => item.id === mediaId);
+    if (!media) return;
+    // Keep failed removals in the media inventory so operators can retry cleanup.
+    try {
+      if (existsSync(media.path)) unlinkSync(media.path);
+    } catch (error) {
+      console.error('Media removal failed', media.id, error);
+      return;
+    }
+    this.store.media = this.store.media.filter(item => item.id !== mediaId);
+    this.persist();
   }
 
   markRead(conversationId: string, userId: string) {
@@ -838,11 +877,13 @@ export class Database {
       .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   }
 
-  listInterpreters() {
+  listInterpreters(includeReview = false) {
     return this.store.interpreters.map((i) => {
       const user = this.getUser(i.userId);
       return {
-        ...i,
+        id: i.id, userId: i.userId, bio: i.bio, languages: i.languages,
+        qualified: i.qualified, available: i.available, createdAt: i.createdAt,
+        ...(includeReview ? { reviewStatus: i.reviewStatus, reviewedAt: i.reviewedAt, reviewedBy: i.reviewedBy } : {}),
         name: user?.name || 'Interpreter',
         language: user?.language
       };
@@ -869,6 +910,14 @@ export class Database {
   }
 
   upsertInterpreter(userId: string, input: { bio?: string; languages?: string[]; available?: boolean }) {
+    if (!this.getUser(userId)) throw new Error('Account not found.');
+    if (!input || typeof input !== 'object' || Array.isArray(input) ||
+        Object.keys(input).some(key => !['bio', 'languages', 'available'].includes(key)) ||
+        (input.bio !== undefined && (typeof input.bio !== 'string' || input.bio.length > 2000)) ||
+        (input.available !== undefined && typeof input.available !== 'boolean') ||
+        (input.languages !== undefined && (!Array.isArray(input.languages) || input.languages.length < 1 || input.languages.length > 20 || input.languages.some(language => typeof language !== 'string' || !language.trim() || language.length > 70)))) {
+      throw new Error('Invalid interpreter profile.');
+    }
     let interpreter = this.store.interpreters.find((i) => i.userId === userId);
     if (!interpreter) {
       interpreter = {
@@ -912,7 +961,7 @@ export class Database {
     };
     this.store.bookings.push(booking);
     this.persist();
-    return booking;
+    return this.bookingForParticipant(booking, requesterId);
   }
 
   updateBooking(userId: string, bookingId: string, status: Booking['status']) {
@@ -926,7 +975,15 @@ export class Database {
     } else if (!isInterpreter || !({ accepted: ['requested'], declined: ['requested'], completed: ['accepted'] } as Record<string, string[]>)[status]?.includes(booking.status)) throw new Error('Invalid booking state transition.');
     booking.status = status;
     this.persist();
-    return booking;
+    return this.bookingForParticipant(booking, userId);
+  }
+
+  private bookingForParticipant(booking: Booking, userId: string) {
+    const interpreter = this.store.interpreters.find(i => i.id === booking.interpreterId);
+    if (booking.requesterId !== userId && interpreter?.userId !== userId) throw new Error('Booking not found.');
+    const { joinToken, ...safe } = booking;
+    // Tokens are only useful for accepted bookings; exports never include them.
+    return { ...safe, ...(booking.status === 'accepted' ? { joinToken } : {}) };
   }
 
   listBookings(userId: string) {
@@ -935,7 +992,7 @@ export class Database {
       .map((i) => i.id);
     return this.store.bookings.filter(
       (b) => b.requesterId === userId || interpreterIds.includes(b.interpreterId)
-    );
+    ).map(booking => this.bookingForParticipant(booking, userId));
   }
 
   assertOrgRole(userId: string, orgId: string, roles: Array<'admin' | 'staff' | 'viewer'> = ['admin','staff','viewer']) {

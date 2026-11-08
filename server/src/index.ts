@@ -3,6 +3,7 @@ import { createReadStream, existsSync } from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { db } from './db.ts';
+import { iceConfiguration } from './ice.ts';
 import { createApp, createHttpServer, json, type Req } from './http.ts';
 import { privateUser } from './types.ts';
 import { MiniSocket, upgradeWebSocket } from './ws.ts';
@@ -62,9 +63,6 @@ function sendTo(userId: string, payload: unknown) {
 function tokenFrom(req: { headers: Req['headers'] }) {
   const cookie = String(req.headers.cookie || '').split(';').map(value => value.trim()).find(value => value.startsWith('unity_session='));
   if (cookie) return cookie.slice('unity_session='.length);
-  // Legacy bearer sessions remain accepted during the migration.
-  const header = req.headers.authorization;
-  if (header?.startsWith('Bearer ')) return header.slice(7);
   return undefined;
 }
 
@@ -94,18 +92,8 @@ app.get('/api/health', (_req, res) => {
 
 app.get('/api/ice', (req, res) => {
   requireUser(req);
-  const ice: Array<Record<string, string | string[]>> = [
-    { urls: 'stun:stun.l.google.com:19302' },
-    { urls: 'stun:stun1.l.google.com:19302' }
-  ];
-  if (process.env.TURN_URLS) {
-    ice.push({
-      urls: process.env.TURN_URLS.split(','),
-      username: process.env.TURN_USERNAME || '',
-      credential: process.env.TURN_PASSWORD || ''
-    });
-  }
-  json(res, 200, { iceServers: ice, turnConfigured: Boolean(process.env.TURN_URLS) });
+  res.setHeader('Cache-Control', 'no-store');
+  json(res, 200, iceConfiguration());
 });
 
 app.post('/api/auth/otp/request', async (req, res) => {
@@ -521,7 +509,7 @@ app.get('/api/admin/me', (req, res) => {
 app.get('/api/admin/interpreters', (req, res) => {
   const user = requireUser(req);
   if (!db.isPlatformAdmin(user.id)) return json(res, 403, { error: 'Administrator access required.' });
-  json(res, 200, { interpreters: db.listInterpreters() });
+  json(res, 200, { interpreters: db.listInterpreters(true) });
 });
 
 app.patch('/api/admin/interpreters/:id/review', (req, res) => {
@@ -653,15 +641,14 @@ app.post('/api/guest-links', (req, res) => {
 app.get('/api/guest/:token/ice', (req, res) => {
   const link = db.getGuestLink(req.params.token);
   if (!link || link.purpose !== 'call') return json(res, 404, { error: 'Guest call invitation not found.' });
-  const ice: Array<Record<string, string | string[]>> = [{ urls: 'stun:stun.l.google.com:19302' }];
-  if (process.env.TURN_URLS) ice.push({ urls: process.env.TURN_URLS.split(','), username: process.env.TURN_USERNAME || '', credential: process.env.TURN_PASSWORD || '' });
-  json(res, 200, { iceServers: ice });
+  res.setHeader('Cache-Control', 'no-store');
+  json(res, 200, iceConfiguration());
 });
 
 app.get('/api/guest/:token', (req, res) => {
   const link = db.getGuestLink(req.params.token);
   if (!link) return json(res, 404, { error: 'This invitation has expired.' });
-  json(res, 200, { link: { id: link.id, purpose: link.purpose, expiresAt: link.expiresAt } });
+  json(res, 200, { link: { id: link.id, purpose: link.purpose, expiresAt: link.expiresAt }, ...(link.purpose === 'org' ? { organization: db.listOrganizations().find(org => org.id === link.targetId) } : {}) });
 });
 
 app.post('/api/consent', (req, res) => {
@@ -764,7 +751,7 @@ const server = createHttpServer(app, (req, socket) => {
       return;
     }
     if (payload.type === 'auth') {
-      const clientToken = tokenFrom(req) || String(payload.token || '');
+      const clientToken = tokenFrom(req);
       const user = db.getSessionUser(clientToken);
       if (!user) {
         client.send(JSON.stringify({ type: 'error', error: 'Invalid session.' }));

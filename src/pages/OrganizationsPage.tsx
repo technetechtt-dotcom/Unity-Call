@@ -38,7 +38,7 @@ export function OrganizationsPage() {
       method: 'POST', body: JSON.stringify({ purpose: 'org', targetId: orgId })
     });
     setGuestUrl(`${window.location.origin}${data.url}`);
-    setMessage('Invitation created. Guest media joining is not yet supported.');
+    setMessage('Invitation created. Visitors can open the link and sign in to check in at a service desk.');
   });
   const book = async () => run(async () => {
     if (!selected || !startsAt || Date.parse(startsAt) <= Date.now()) throw Error('Choose an organisation and a future date and time.');

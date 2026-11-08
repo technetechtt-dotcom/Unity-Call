@@ -88,6 +88,26 @@ test('guest invitation requires signed-in host and isolates a two-person relay',
     const cookie = verified.headers.get('set-cookie')?.split(';')[0];
     assert(cookie);
     const user = await verified.json() as { user: { id: string } };
+    const bearer = cookie.slice('unity_session='.length);
+    const legacy = await fetch(base + '/api/auth/me', { headers: { Authorization: `Bearer ${bearer}` } });
+    assert.equal(legacy.status, 401, 'legacy bearer credentials must be rejected');
+    const authenticated = await fetch(base + '/api/auth/me', { headers: { Cookie: cookie } });
+    assert.equal(authenticated.status, 200, 'cookie authentication remains supported');
+    const legacySocket = await openSocket(`ws://127.0.0.1:${port}/ws`, base);
+    clients.push(legacySocket);
+    const deniedLegacyAuth = expectEvent(legacySocket, 'error');
+    legacySocket.send(JSON.stringify({ type: 'auth', token: bearer }));
+    assert.equal((await deniedLegacyAuth).error, 'Invalid session.');
+    legacySocket.close();
+    const organization = await (await post('/api/orgs', { name: 'Guest Test Organisation', kind: 'business' }, cookie)).json() as { organization: { id: string } };
+    const orgLink = await (await post('/api/guest-links', { purpose: 'org', targetId: organization.organization.id }, cookie)).json() as { url: string; link: { token: string } };
+    assert.equal(orgLink.url, `/join/${orgLink.link.token}`);
+    const resolved = await (await fetch(base + `/api/guest/${orgLink.link.token}`)).json() as { organization: { id: string }; link: Record<string, unknown> };
+    assert.equal(resolved.organization.id, organization.organization.id);
+    assert.equal(resolved.link.purpose, 'org');
+    assert.equal('createdBy' in resolved.link, false);
+    assert.equal('token' in resolved.link, false);
+
     const created = await (await post('/api/guest-links', { purpose: 'call', targetId: user.user.id }, cookie)).json() as { link: { token: string } };
     const roomToken = created.link.token;
     const host = await openSocket(`ws://127.0.0.1:${port}/ws`, base, cookie);

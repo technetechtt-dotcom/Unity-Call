@@ -1,12 +1,15 @@
 import { useEffect, useRef, useState } from 'react';
 import { useParams } from '../lib/router';
 import { api } from '../lib/api';
+import { useAuth } from '../context/AuthContext';
 
 type Signal = { sdp?: RTCSessionDescriptionInit; candidate?: RTCIceCandidateInit };
 type GuestEvent = { type: string; role?: 'host' | 'guest'; error?: string; signal?: Signal; text?: string };
 
 export function GuestJoinPage() {
   const { token } = useParams();
+  const { user } = useAuth();
+  const [organization, setOrganization] = useState<{ id: string; name: string; description?: string; desks: Array<{ id: string; name: string }> }>();
   const [status, setStatus] = useState('Checking invitation…');
   const [valid, setValid] = useState(false);
   const [invitationId, setInvitationId] = useState('');
@@ -30,9 +33,14 @@ export function GuestJoinPage() {
   useEffect(() => {
     if (!token) { setStatus('Invitation missing.'); return; }
     let mounted = true;
-    void api<{ link: { id: string; purpose: string; expiresAt: string } }>(`/api/guest/${encodeURIComponent(token)}`)
-      .then(({ link }) => {
+    void api<{ link: { id: string; purpose: string; expiresAt: string }; organization?: { id: string; name: string; description?: string; desks: Array<{ id: string; name: string }> } }>(`/api/guest/${encodeURIComponent(token)}`)
+      .then(({ link, organization: org }) => {
         if (!mounted) return;
+        if (link.purpose === 'org' && org) {
+          setOrganization(org);
+          setStatus('Choose a service desk to check in. Sign in or create an account first.');
+          return;
+        }
         if (link.purpose !== 'call') { setStatus('This invitation is not a direct-call room.'); return; }
         setValid(true);
         setInvitationId(link.id);
@@ -159,8 +167,22 @@ export function GuestJoinPage() {
 
   return (
     <main className="min-h-dvh p-5 max-w-3xl mx-auto space-y-5">
-      <h1 className="text-3xl font-bold">Unity guest call</h1>
+      <h1 className="text-3xl font-bold">{organization ? organization.name : 'Unity guest call'}</h1>
       <p role="status" aria-live="polite">{status}</p>
+      {organization && <section className="rounded-xl bg-white p-4 space-y-3" aria-label="Organisation check-in">
+        <p>{organization.description}</p>
+        {!user ? <p><a className="underline" href="/login">Sign in</a> or <a className="underline" href="/register">create an account</a>, then reopen your invitation to check in.</p> : <>
+          <h2 className="font-semibold">Choose a service desk</h2>
+          {organization.desks.length === 0 && <p>No service desks are available. Contact the organisation.</p>}
+          {organization.desks.map(desk => <button key={desk.id} type="button" disabled={busy} className="block p-3 rounded-lg bg-teal-700 text-white min-h-[48px] disabled:opacity-60" onClick={() => {
+            setBusy(true);
+            void api<{ item: { position: number } }>(`/api/desks/${desk.id}/queue`, { method: 'POST' })
+              .then(({ item }) => setStatus(`Checked in at ${desk.name}. Queue position: ${item.position}.`))
+              .catch(error => setStatus(error instanceof Error ? error.message : 'Check-in failed. Try again.'))
+              .finally(() => setBusy(false));
+          }}>Check in at {desk.name}</button>)}
+        </>}
+      </section>}
       {valid && <>
         <div className="space-y-2 bg-white rounded-xl p-4">
           <label htmlFor="guest-link" className="block font-medium">Secure invitation link</label>

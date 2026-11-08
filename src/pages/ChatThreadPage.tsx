@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from '../lib/router';
 import { ArrowLeft, Mic, Paperclip, Phone, Search, Send, StopCircle, Video } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -25,12 +25,15 @@ export function ChatThreadPage() {
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(true);
   const [mediaBusy, setMediaBusy] = useState(false);
   const [conversation, setConversation] = useState<ConversationSummary>();
   const [inputText, setInputText] = useState('');
   const [search, setSearch] = useState('');
   const [typing, setTyping] = useState(false);
-  const endRef = useRef<HTMLDivElement>(null);
+  const historyRef = useRef<HTMLElement>(null);
+  const followLatest = useRef(true);
+  const prependPosition = useRef<{ height: number; top: number } | null>(null);
 
   const load = async () => {
     if (!id) return;
@@ -45,7 +48,8 @@ export function ChatThreadPage() {
   };
 
   useEffect(() => {
-    void load().catch(err => setError(err instanceof Error ? err.message : 'Failed to load conversation.'));
+    setLoading(true); setError(''); followLatest.current = true;
+    void load().catch(err => setError(err instanceof Error ? err.message : 'Failed to load conversation.')).finally(() => setLoading(false));
     // Reload when the conversation or search changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, search]);
@@ -84,8 +88,16 @@ export function ChatThreadPage() {
     };
   }, [id, user?.id]);
 
-  useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: 'smooth' });
+  useLayoutEffect(() => {
+    const history = historyRef.current;
+    if (!history) return;
+    const position = prependPosition.current;
+    if (position) {
+      history.scrollTop = position.top + history.scrollHeight - position.height;
+      prependPosition.current = null;
+    } else if (followLatest.current) {
+      history.scrollTop = history.scrollHeight;
+    }
   }, [messages, typing]);
 
   useEffect(() => {
@@ -142,6 +154,8 @@ export function ChatThreadPage() {
     setLoadingOlder(true); setError('');
     try {
       const result = await api<{ messages: ChatMessage[]; nextCursor: string | null }>(`/api/conversations/${id}/messages?limit=30&before=${encodeURIComponent(nextCursor)}${search ? `&q=${encodeURIComponent(search)}` : ''}`);
+      const history = historyRef.current;
+      if (history) prependPosition.current = { height: history.scrollHeight, top: history.scrollTop };
       setMessages(previous => [...result.messages.filter(item => !previous.some(existing => existing.id === item.id)), ...previous]);
       setNextCursor(result.nextCursor);
     } catch (err) { setError(err instanceof Error ? err.message : 'Could not load earlier messages.'); }
@@ -150,6 +164,7 @@ export function ChatThreadPage() {
 
   const sendText = async (text = inputText) => {
     if (!id || !text.trim()) return;
+    followLatest.current = true;
     const clientId = crypto.randomUUID();
     const optimistic: ChatMessage = {
       id: clientId,
@@ -291,8 +306,17 @@ export function ChatThreadPage() {
         </div>
       </header>
 
-      <main className="flex-1 overflow-y-auto px-4 py-4" role="log" aria-label="Message history">
+      <main ref={historyRef} className="flex-1 min-h-0 overflow-y-auto px-4 py-4" style={{ overflowAnchor: 'none' }} role="log" aria-label="Message history" onScroll={event => {
+        const history = event.currentTarget;
+        followLatest.current = history.scrollHeight - history.clientHeight - history.scrollTop < 80;
+      }}>
         {error && <p role="alert" className="text-red-700 bg-white p-2 rounded mb-2">{error}</p>}
+        {loading && <p role="status">Loading messages…</p>}
+        {!loading && !error && visible.length === 0 && <p>{search ? 'No matching messages.' : 'No messages yet. Send the first message.'}</p>}
+        {error && <button type="button" className="underline min-h-[44px]" onClick={() => {
+          setLoading(true); setError('');
+          void load().catch(err => setError(err instanceof Error ? err.message : 'Could not load messages.')).finally(() => setLoading(false));
+        }}>Retry loading messages</button>}
         {nextCursor && <button type="button" className="underline min-h-[44px] mb-2" disabled={loadingOlder} onClick={() => void loadOlder()}>{loadingOlder ? 'Loading earlier messages…' : 'Load earlier messages'}</button>}
         {visible.map((msg) => (
           <ChatBubble
@@ -309,7 +333,6 @@ export function ChatThreadPage() {
           />
         ))}
         {typing && <p className="text-sm opacity-70">{t('chat.typing')}</p>}
-        <div ref={endRef} />
       </main>
 
       <footer className={`p-4 border-t ${highContrast ? 'border-white' : 'border-gray-200 bg-white'}`}>

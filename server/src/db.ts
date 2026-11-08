@@ -346,6 +346,7 @@ export class Database {
         const other = this.getUser(otherId);
         return {
           ...c,
+          direction: c.contactUserId === userId ? 'incoming' : 'outgoing',
           user: other
             ? { id: other.id, name: other.name, language: other.language }
             : undefined
@@ -354,6 +355,7 @@ export class Database {
   }
 
   inviteContact(ownerId: string, targetId: string) {
+    if (!this.getUser(ownerId) || !this.getUser(targetId)) throw new Error('Contact unavailable.');
     if (ownerId === targetId) throw new Error('You cannot add yourself.');
     if (this.isBlocked(ownerId, targetId)) throw new Error('This person is unavailable.');
     const existing = this.store.contacts.find(
@@ -376,11 +378,19 @@ export class Database {
 
   acceptContact(userId: string, contactId: string) {
     const contact = this.store.contacts.find((c) => c.id === contactId);
-    if (!contact || contact.contactUserId !== userId) throw new Error('Invitation not found.');
+    if (!contact || contact.contactUserId !== userId || contact.status !== 'pending' || this.isBlocked(userId, contact.ownerId)) throw new Error('Pending invitation not found.');
     contact.status = 'accepted';
     this.persist();
     this.getOrCreateConversation(userId, contact.ownerId);
     return contact;
+  }
+
+  declineContact(userId: string, contactId: string) {
+    const existing = this.store.contacts.find(c => c.id === contactId && c.contactUserId === userId && c.status === 'pending');
+    if (!existing) throw new Error('Pending invitation not found.');
+    this.store.contacts = this.store.contacts.filter(c => c.id !== contactId);
+    this.persist();
+    return { id: contactId, ownerId: existing.ownerId };
   }
 
   blockUser(blockerId: string, blockedId: string) {

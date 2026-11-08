@@ -176,6 +176,11 @@ app.post('/api/auth/rotate', (req, res) => {
   json(res, 200, { ok: true, expiresAt: result.session.expiresAt });
 });
 
+app.get('/api/auth/security-events', (req, res) => {
+  const user = requireUser(req);
+  json(res, 200, { events: db.listSecurityEvents(user.id) });
+});
+
 app.get('/api/auth/sessions', (req, res) => {
   const user = requireUser(req);
   json(res, 200, { sessions: db.listSessions(user.id, tokenFrom(req)) });

@@ -224,8 +224,17 @@ export interface TrainingConsent {
   updatedAt: string;
 }
 
+export interface SecurityEvent {
+  id: string;
+  userId: string;
+  action: 'session_created' | 'new_browser' | 'session_rotated' | 'session_revoked' | 'interpreter_review';
+  details?: string;
+  createdAt: string;
+}
+
 export interface StoreData {
   users: User[];
+  securityEvents: SecurityEvent[];
   sessions: Session[];
   otpCodes: OtpCode[];
   preferences: Preferences[];
@@ -252,6 +261,7 @@ export interface StoreData {
 export function emptyStore(): StoreData {
   return {
     users: [],
+    securityEvents: [],
     sessions: [],
     otpCodes: [],
     preferences: [],

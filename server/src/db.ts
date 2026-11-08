@@ -214,6 +214,17 @@ export class Database {
     return this.getUser(session.userId);
   }
 
+  rotateSession(token: string, userAgent?: string) {
+    const original = this.store.sessions.find(s => s.tokenHash === hashToken(token) && Date.parse(s.expiresAt) > Date.now());
+    if (!original || !this.getUser(original.userId)) throw new Error('Please sign in again.');
+    const nextToken = randomBytes(32).toString('hex');
+    original.tokenHash = hashToken(nextToken);
+    original.userAgent = userAgent || original.userAgent;
+    original.expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+    this.persist();
+    return { token: nextToken, session: original };
+  }
+
   revokeSession(token: string) {
     const hash = hashToken(token);
     this.store.sessions = this.store.sessions.filter((s) => s.tokenHash !== hash);
@@ -816,12 +827,32 @@ export class Database {
     });
   }
 
+  isPlatformAdmin(userId: string) {
+    const user = this.getUser(userId);
+    const allowed = (process.env.PLATFORM_ADMIN_EMAILS || '').split(',').map(email => email.trim().toLowerCase()).filter(Boolean);
+    return !!user?.email && allowed.includes(user.email.toLowerCase());
+  }
+
+  reviewInterpreter(actorId: string, interpreterId: string, decision: 'approved' | 'rejected' | 'suspended') {
+    if (!this.isPlatformAdmin(actorId)) throw new Error('Administrator access required.');
+    const interpreter = this.store.interpreters.find(i => i.id === interpreterId);
+    if (!interpreter) throw new Error('Interpreter not found.');
+    interpreter.qualified = decision === 'approved';
+    interpreter.reviewStatus = decision;
+    interpreter.reviewedAt = now();
+    interpreter.reviewedBy = actorId;
+    if (decision !== 'approved') interpreter.available = false;
+    this.persist();
+    return interpreter;
+  }
+
   upsertInterpreter(userId: string, input: { bio?: string; languages?: string[]; available?: boolean }) {
     let interpreter = this.store.interpreters.find((i) => i.userId === userId);
     if (!interpreter) {
       interpreter = {
         id: randomUUID(),
         userId,
+        reviewStatus: 'pending',
         bio: input.bio,
         languages: input.languages || ['SASL', 'English'],
         qualified: false,
@@ -830,6 +861,12 @@ export class Database {
       };
       this.store.interpreters.push(interpreter);
     } else {
+      // Editing qualifications requires fresh independent review.
+      if (input.bio !== undefined && input.bio !== interpreter.bio || input.languages && JSON.stringify(input.languages) !== JSON.stringify(interpreter.languages)) {
+        interpreter.qualified = false;
+        interpreter.reviewStatus = 'pending';
+        interpreter.available = false;
+      }
       Object.assign(interpreter, input);
     }
     this.persist();

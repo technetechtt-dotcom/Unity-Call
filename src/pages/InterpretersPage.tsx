@@ -1,15 +1,17 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from '../lib/router';
+import { useAuth } from '../context/AuthContext';
 import { ArrowLeft } from 'lucide-react';
 import { api } from '../lib/api';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
 
-interface Interpreter { id: string; name: string; bio?: string; languages: string[]; qualified: boolean; available: boolean }
+interface Interpreter { id: string; userId: string; name: string; bio?: string; languages: string[]; qualified: boolean; available: boolean; reviewStatus?: string }
 interface Booking { id: string; interpreterId: string; startsAt: string; status: string; requesterId: string }
 
 export function InterpretersPage() {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [interpreters, setInterpreters] = useState<Interpreter[]>([]);
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [notice, setNotice] = useState('');
@@ -55,6 +57,16 @@ export function InterpretersPage() {
           <Input name="bio" label="Experience and qualifications" placeholder="Describe your relevant experience"/>
           <Button type="submit" disabled={busy}>Submit profile</Button>
         </form>
+        {interpreters.some(item => item.userId === user?.id) && <section className="space-y-3 bg-white rounded-xl p-4">
+          <h2 className="font-bold">My interpreter availability</h2>
+          {interpreters.filter(item => item.userId === user?.id).map(item => <div key={item.id} className="space-y-2">
+            <p>Status: {item.reviewStatus || 'pending'} · {item.qualified ? 'Verified' : 'Not verified'}</p>
+            <label className="flex items-center gap-3"><input type="checkbox" checked={item.available} onChange={event => void act(async () => {
+              await api('/api/interpreters', { method: 'POST', body: JSON.stringify({ available: event.target.checked }) });
+              setSuccess('Availability updated.');
+            })} /> Available for new requests</label>
+          </div>)}
+        </section>}
         <section className="space-y-3">
           <h2 className="font-bold">Request a session</h2>
           <label htmlFor="interpreter-time" className="block">Preferred session time</label>
@@ -76,10 +88,20 @@ export function InterpretersPage() {
           {bookings.map(b => <article key={b.id} className="bg-white p-4 rounded-xl space-y-2">
             <p>{interpreters.find(i => i.id === b.interpreterId)?.name || 'Interpreter'}</p>
             <p className="text-sm">{new Date(b.startsAt).toLocaleString()} · {b.status}</p>
-            {b.status === 'requested' && <Button variant="outline" disabled={busy} onClick={() => void act(async () => {
+            {user?.id === b.requesterId && (b.status === 'requested' || b.status === 'accepted') && <Button variant="outline" disabled={busy} onClick={() => void act(async () => {
               await api(`/api/bookings/${b.id}`, { method: 'PATCH', body: JSON.stringify({ status: 'cancelled' }) });
               setSuccess('Booking cancelled.');
-            })}>Cancel request</Button>}
+            })}>Cancel booking</Button>}
+            {interpreters.some(item => item.id === b.interpreterId && item.userId === user?.id) && b.status === 'requested' && <div className="flex flex-wrap gap-2">
+              {(['accepted','declined'] as const).map(status => <Button key={status} variant="outline" disabled={busy} onClick={() => void act(async () => {
+                await api(`/api/bookings/${b.id}`, { method: 'PATCH', body: JSON.stringify({ status }) });
+                setSuccess(`Booking ${status}.`);
+              })}>{status === 'accepted' ? 'Accept session' : 'Decline session'}</Button>)}
+            </div>}
+            {interpreters.some(item => item.id === b.interpreterId && item.userId === user?.id) && b.status === 'accepted' && <Button variant="outline" disabled={busy} onClick={() => void act(async () => {
+              await api(`/api/bookings/${b.id}`, { method: 'PATCH', body: JSON.stringify({ status: 'completed' }) });
+              setSuccess('Session marked completed.');
+            })}>Complete session</Button>}
           </article>)}
         </section>
       </main>

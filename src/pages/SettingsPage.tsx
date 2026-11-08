@@ -1,4 +1,5 @@
 import { Link, useNavigate } from '../lib/router';
+import { useState } from 'react';
 import {
   Eye,
   Globe,
@@ -20,9 +21,13 @@ export function SettingsPage() {
   const { user, logout, deleteAccount, savePreferences } = useAuth();
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const [saveStatus, setSaveStatus] = useState('');
+  const [settingsError, setSettingsError] = useState('');
 
   const persist = (payload: Record<string, unknown>) => {
-    void savePreferences(payload);
+    setSettingsError(''); setSaveStatus('Saving…');
+    void savePreferences(payload).then(() => setSaveStatus('Preferences saved.'))
+      .catch(error => { setSaveStatus(''); setSettingsError(error instanceof Error ? error.message : 'Could not save preferences.'); });
   };
 
   const Toggle = ({
@@ -63,6 +68,8 @@ export function SettingsPage() {
         <h1 className="text-2xl font-bold">{t('settings.title')}</h1>
       </header>
       <main className="flex-1 overflow-y-auto py-4 space-y-2">
+        {settingsError && <p role="alert" className="mx-4 p-3 rounded bg-red-50 text-red-800">{settingsError}</p>}
+        {saveStatus && <p role="status" className="mx-4 p-2 text-sm">{saveStatus}</p>}
         <section className={`p-4 mx-4 rounded-xl ${acc.highContrast ? 'border border-white' : 'bg-white shadow-sm'}`}>
           <div className="flex items-center gap-3 mb-3">
             <User />

@@ -1,6 +1,6 @@
 # Unity Call implementation status
 
-Updated: 2026-11-07. Source-code changes committed directly to `main`. This document records *code implementation*, not production certification.
+Updated: 2026-11-08. Source-code changes committed directly to `main`. This document records *code implementation*, not production certification.
 
 ## Implemented and CI-checked in this development pass
 
@@ -34,18 +34,37 @@ Updated: 2026-11-07. Source-code changes committed directly to `main`. This docu
 - [x] Guest invitation listing and owner-only revocation; direct call room ownership validation and reduced public invitation details.
 - [x] Additional HTTP and guest WebSocket integration tests; these verify signalling/authorization but not physical-device media.
 
+## Additional implementation on 2026-11-08
+
+These are source changes on `main` and require production acceptance testing, even when CI succeeds.
+
+- [x] Repaired New Chat so a pending invite no longer triggers forbidden conversation creation.
+- [x] Added `/contacts` invitation inbox with Accept, Decline, Accepted/Blocked lists and Chat links; added route, chat-list link and realtime invitation notifications.
+- [x] Added direction to contact entries, accepted-invitation replay protection, decline endpoint, and generic destination lookup responses to reduce account enumeration.
+- [x] Added two-account HTTP regression tests for invitation acceptance, blocked messaging and persistent read status; expanded backend self-check for acceptance/decline and account privacy.
+- [x] Added authenticated session-token rotation endpoint and manual renewal control, with old token invalidation.
+- [x] Added account-scoped security event history and a basic new-browser-signature indicator. These are not a substitute for verified-device risk scoring or email alerts.
+- [x] Added allowlisted interpreter approval, rejection and suspension API and management page; interpreter booking acceptance/decline/completion and availability controls.
+- [x] Restored incoming caller metadata and transcript-consent context on browser refresh, with error feedback.
+- [x] Added Chat Thread older-message pagination, attachment upload error/working states and voice-note upload failure feedback.
+- [x] Improved profile/report/callback feedback, settings persistence feedback, post-sign-in deep links and missing-route handling.
+- [x] Corrected account erasure so the deleted person's messages are erased without destroying the counterpart's own conversation history.
+- [x] Added private-data-safe service-worker offline shell, offline fallback and user-controlled app update notice.
+
+**Not achieved:** Completion of all requested 162 items, PostgreSQL cutover, production-ready media storage, distributed rate limiting, external-provider delivery validation, cross-network WebRTC verification, enterprise dashboards, group calling, subscriptions/billing, and authentic SASL AI or signing animation.
+
 ## Further software engineering — no supplier account required, but NOT completed
 
 - [ ] Refactor synchronous JSON datastore to a transactional PostgreSQL implementation; add versioned migrations, migration tests, recovery/restore tests and a safe cutover tool.
-- [ ] Add refresh-token rotation or shorter session expiry/renewal, optional MFA, suspicious-login detection, persistent/distributed rate limits and role-change audit events.
+- [ ] Complete automatic renewable session lifecycle, optional MFA, robust suspicious-login alerts, distributed rate limits and full immutable role-change auditing. Basic token rotation and local security events are implemented.
 - [ ] Validate and harden newly implemented browser guest calls across real devices, including reconnection, TURN and complete guest accessibility; integrate into ordinary call history.
 - [ ] Add robust calling reconnection, speaker/Bluetooth selection, call quality recovery and full real-device integration tests; missed-call timeout and input selection are implemented.
 - [ ] Add per-route schema validation, pagination, background job worker, service-level metrics and complete API tests.
 - [ ] Complete media deletion/retention and accessible previews/progress/recovery; message deletion and basic receiver receipts have been implemented, but comprehensive delivery-state testing remains.
-- [ ] Add interpreter credential review/admin tools, availability calendar, reminders, cancellation/booking confirmations and integrated interpretation calls.
+- [ ] Complete independently validated interpreter credential review, full calendar, reminders, cancellation/booking confirmations and integrated interpretation calls. Allowlisted review and provider booking controls now exist.
 - [ ] Add organisational reporting, staff invitations via accessible discovery, scheduling conflicts, availability slots and complete queue management.
 - [ ] Build group messaging with participant administration and appropriate permissions; group and three-way calling require a separate WebRTC design.
-- [ ] Implement more robust offline caching, app update notification and local background notification controls.
+- [ ] Complete offline installation, update and push acceptance testing plus background notification controls. A static offline fallback and update notice are implemented.
 - [ ] Expand screen-reader keyboard focus management, caption corrections and full error/loading states throughout all routes.
 - [ ] Add automated accessibility testing and realistic cross-account end-to-end browser suites.
 - [ ] Add structured security audit history, moderation review screens, documented data-retention configuration, incident response workflows and operational POPIA procedures.

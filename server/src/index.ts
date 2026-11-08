@@ -229,7 +229,7 @@ app.post('/api/contacts/invite', (req, res) => {
   let targetId = req.body.userId as string | undefined;
   if (!targetId && typeof req.body.destination === 'string') {
     const destination = String(req.body.destination).trim().toLowerCase();
-    if (!(destination.includes('@') ? /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(destination) : /^\\+[1-9]\\d{7,14}$/.test(destination))) return json(res, 400, { error: 'Enter a valid email or international phone number.' });
+    if (!(destination.includes('@') ? /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(destination) : /^\+[1-9]\d{7,14}$/.test(destination))) return json(res, 400, { error: 'Enter a valid email or international phone number.' });
     targetId = db.findUserByDestination(destination)?.id;
   }
   if (!targetId) return json(res, 202, { ok: true, message: 'Invitation request received if the person is eligible.' });

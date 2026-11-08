@@ -1,7 +1,13 @@
 # Unity-Call — outstanding production release gates
-Updated 2026-11-07. See [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md) for the committed engineering work.
+Updated 2026-11-08. See [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md) for the committed engineering work.
 
 > **Do not deploy for sensitive or unattended public use yet.** Passing GitHub CI does not certify calling on real networks, accessibility, compliance or infrastructure.
+
+## 2026-11-08 implementation additions
+
+Contact invitations now have a visible accept/decline inbox, accepted-contact chat navigation, generic email/phone lookup responses, and two-account HTTP tests. Session-token rotation exists with an explicit user-controlled renewal action and basic new-browser event history, but still lacks production-grade distributed security controls. The interpreter platform now has an allowlisted reviewer dashboard with approve/reject/suspend and interpreter-facing booking controls, but validation of real credentials and live interpreted sessions is outstanding. Incoming calls restore metadata following a refresh; message pagination and offline static shell were improved. Profile/report/callback failure states, missing-route handling and user-controlled app updates were added.
+
+These features were committed but their final GitHub CI run, external-device testing and production acceptance must be verified separately.
 
 ## P0: blockers
 

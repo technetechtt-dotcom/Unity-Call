@@ -18,6 +18,8 @@ export function NewChatPage() {
   const [query, setQuery] = useState('');
   const [users, setUsers] = useState<FoundUser[]>([]);
   const [message, setMessage] = useState('');
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
 
   const search = async (value: string) => {
     setQuery(value);
@@ -25,32 +27,42 @@ export function NewChatPage() {
       setUsers([]);
       return;
     }
-    const data = await api<{ users: FoundUser[] }>(`/api/users/search?q=${encodeURIComponent(value)}`);
-    setUsers(data.users);
+    try {
+      const data = await api<{ users: FoundUser[] }>(`/api/users/search?q=${encodeURIComponent(value)}`);
+      setUsers(data.users);
+    } catch (err) { setError(err instanceof Error ? err.message : 'Search unavailable.'); }
   };
 
   const start = async (userId: string) => {
-    await api('/api/contacts/invite', {
-      method: 'POST',
-      body: JSON.stringify({ userId })
-    });
-    const created = await api<{ conversation: { id: string } }>('/api/conversations', {
-      method: 'POST',
-      body: JSON.stringify({ userId })
-    });
-    navigate(`/chats/${created.conversation.id}`);
+    if (busy) return;
+    setBusy(true); setError(''); setMessage('');
+    try {
+      const result = await api<{ status?: string }>('/api/contacts/invite', {
+        method: 'POST', body: JSON.stringify({ userId })
+      });
+      if (result.status === 'accepted') {
+        const created = await api<{ conversation: { id: string } }>('/api/conversations', {
+          method: 'POST', body: JSON.stringify({ userId })
+        });
+        navigate(`/chats/${created.conversation.id}`);
+      } else {
+        setMessage('Invitation sent. You can start chatting after the person accepts. Check Contacts for its status.');
+      }
+    } catch (err) { setError(err instanceof Error ? err.message : 'Could not send invitation.'); }
+    finally { setBusy(false); }
   };
 
   const inviteByDestination = async (event: React.FormEvent) => {
     event.preventDefault();
+    setError('');
     try {
       await api('/api/contacts/invite', {
         method: 'POST',
         body: JSON.stringify({ destination: query })
       });
-      setMessage('Invitation sent. They will see it when they next open Unity.');
+      setMessage('Invitation request received. If this person has an eligible account, they can accept it in Contacts.');
     } catch (err) {
-      setMessage(err instanceof Error ? err.message : 'Could not send invitation.');
+      setError(err instanceof Error ? err.message : 'Could not send invitation.');
     }
   };
 
@@ -72,13 +84,16 @@ export function NewChatPage() {
         <form onSubmit={inviteByDestination}>
           <Button type="submit" fullWidth>Send invitation</Button>
         </form>
+        {error && <p role="alert" className="text-red-700">{error}</p>}
         {message && <p role="status">{message}</p>}
+        <button type="button" className="underline min-h-[44px]" onClick={() => navigate('/contacts')}>View invitations and contacts</button>
         <ul className="space-y-2">
           {users.map((user) => (
             <li key={user.id}>
               <button
                 type="button"
                 className="w-full text-left p-4 rounded-xl bg-white shadow-sm min-h-[56px]"
+                disabled={busy}
                 onClick={() => void start(user.id)}
               >
                 <strong>{user.name}</strong>

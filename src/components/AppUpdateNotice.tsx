@@ -16,7 +16,7 @@ export function AppUpdateNotice() {
         });
       });
     };
-    void inspect().catch(() => {});
+    void inspect().catch(() => { if (mounted) setWaiting(null); });
     return () => { mounted = false; };
   }, []);
 

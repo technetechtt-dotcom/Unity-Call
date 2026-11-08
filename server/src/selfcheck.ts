@@ -14,13 +14,25 @@ const alice = db.createUser({ name: 'Alice', email: `alice-${stamp}@example.com`
 const bob = db.createUser({ name: 'Bob', email: `bob-${stamp}@example.com` });
 const { token } = db.createSession(alice.id);
 assert(db.getSessionUser(token)?.id === alice.id, 'session should resolve the owner');
+const secondary = db.createSession(alice.id);
+const rotated = db.rotateSession(secondary.token);
+assert(!db.getSessionUser(secondary.token), 'rotated session token must be invalid');
+assert(db.getSessionUser(rotated.token)?.id === alice.id, 'rotated session remains authenticated');
 assert(!db.getSessionUser('nope'), 'unknown tokens must not resolve');
 
 let unauthorized = false;
 try { db.getOrCreateConversation(alice.id, bob.id); } catch { unauthorized = true; }
 assert(unauthorized, 'unaccepted contacts must not get a conversation');
 const invitation = db.inviteContact(alice.id, bob.id);
+assert(db.listContacts(bob.id).some(contact => contact.id === invitation.id && contact.direction === 'incoming'), 'receiver sees pending incoming invitation');
+assert(db.listContacts(alice.id).some(contact => contact.id === invitation.id && contact.direction === 'outgoing'), 'sender sees pending outgoing invitation');
+const declined = db.inviteContact(alice.id, db.createUser({ name: 'Decline Contact', email: `decline-${stamp}@example.com` }).id);
+db.declineContact(declined.contactUserId, declined.id);
+assert(!db.listContacts(alice.id).some(contact => contact.id === declined.id), 'decline removes invitation');
 db.acceptContact(bob.id, invitation.id);
+let replayAccepted = false;
+try { db.acceptContact(bob.id, invitation.id); } catch { replayAccepted = true; }
+assert(replayAccepted, 'accepted invitations cannot be replayed');
 const conversation = db.getOrCreateConversation(alice.id, bob.id);
 const message = db.createMessage({
   conversationId: conversation.id,
@@ -70,6 +82,15 @@ rejected = false;
 try { db.updateCall(call.id, bob.id, 'accepted'); } catch { rejected = true; }
 assert(rejected, 'ended calls cannot be reaccepted');
 
+let reviewDenied = false;
+const interpreter = db.upsertInterpreter(bob.id, { bio: 'SASL interpreting experience', languages: ['SASL'], available: true });
+try { db.reviewInterpreter(bob.id, interpreter.id, 'approved'); } catch { reviewDenied = true; }
+assert(reviewDenied, 'non-administrator cannot verify their own interpreter qualifications');
+process.env.PLATFORM_ADMIN_EMAILS = alice.email;
+db.reviewInterpreter(alice.id, interpreter.id, 'approved');
+assert(db.listInterpreters().find(i => i.id === interpreter.id)?.qualified === true, 'authorised review verifies interpreter');
+db.reviewInterpreter(alice.id, interpreter.id, 'suspended');
+assert(db.listInterpreters().find(i => i.id === interpreter.id)?.available === false, 'suspension disables interpreter availability');
 const org = db.createOrganization(alice.id, 'Unity Test Organisation', 'business');
 rejected = false;
 try { db.createDesk(bob.id, org.id, 'Billing'); } catch { rejected = true; }

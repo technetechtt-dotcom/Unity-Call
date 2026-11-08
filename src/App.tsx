@@ -24,6 +24,7 @@ import { OrganizationsPage } from './pages/OrganizationsPage';
 import { OrganisationAdminPage } from './pages/OrganisationAdminPage';
 import { GuestJoinPage } from './pages/GuestJoinPage';
 import { LegalPage } from './pages/LegalPage';
+import { NotFoundPage } from './pages/NotFoundPage';
 import './i18n/config';
 
 function HomeRedirect() {
@@ -75,7 +76,7 @@ function AppRoutes() {
           <Route path="/orgs/manage" element={<OrganisationAdminPage />} />
         </Route>
       </Route>
-      <Route path="*" element={<Navigate to="/" replace />} />
+      <Route path="*" element={<NotFoundPage />} />
     </Routes>
   );
 }

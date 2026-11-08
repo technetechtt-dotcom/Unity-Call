@@ -67,7 +67,7 @@ assert(isolated, 'strangers must not read private conversations');
 
 const third = db.createUser({ name: 'Third', email: `third-${stamp}@example.com` });
 const devices = db.listSessions(alice.id, token);
-assert(devices.length === 1 && devices[0].current, 'current session must be listed');
+assert(devices.length === 2 && devices.some(session => session.current), 'current and rotated sessions must be listed');
 let rejected = false;
 try { db.revokeSessionById(third.id, devices[0].id); } catch { rejected = true; }
 assert(rejected, 'session ownership is required');
